@@ -1,0 +1,55 @@
+# Prism Production Docker Compose
+# Uses bind mounts to ~/.local/share for XDG compliance and backup compatibility
+
+services:
+  prism:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: prod
+    container_name: prism
+    restart: always
+    ports:
+      - "8765:8765"
+    volumes:
+      # XDG-compliant bind mounts for data persistence
+      - ~/.local/share/prism:/home/appuser/.local/share/prism:z
+      - ~/.cache/prism:/home/appuser/.cache/prism:z
+      # Config override (read-only)
+      - ~/.config/prism/prism.yaml:/home/appuser/.config/prism/prism.yaml:ro,z
+    environment:
+      - PRISM_SERVER_LOG_LEVEL=INFO
+    env_file:
+      - ~/.config/prism/.env
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/8765'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: prism-postgres
+    restart: always
+    volumes:
+      - ~/.local/share/prism/postgres:/var/lib/postgresql/data:z
+    environment:
+      POSTGRES_DB: prism
+      POSTGRES_USER: prism
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prism -d prism"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+secrets:
+  postgres_password:
+    file: ~/.config/prism/postgres_password

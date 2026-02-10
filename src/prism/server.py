@@ -1,0 +1,359 @@
+"""
+Prism MCP Server.
+
+FastMCP server with DI wiring for all components.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+import uuid
+from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
+from typing import Annotated, Any, AsyncIterator
+
+from fastmcp import FastMCP
+
+from prism.config import get_config
+from prism.core import ClaudeExecutor, RetryExecutor, SessionRegistry
+from prism.database import (
+    SearchSessionRepository,
+    close_database,
+    init_database,
+)
+from prism.mcp_serializer import serialize_response
+from prism.orchestrator import ResultSynthesizer, SearchFlow, WorkerDispatcher
+from prism.tools import execute_cancel, execute_search
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_USER_ID = "default"
+
+# Global singletons (initialized in lifespan)
+_session_registry: SessionRegistry | None = None
+_search_flow: SearchFlow | None = None
+_session_repository: SearchSessionRepository | None = None
+_user_id: str = DEFAULT_USER_ID
+
+
+def _get_session_registry() -> SessionRegistry:
+    """Get the session registry singleton."""
+    if _session_registry is None:
+        raise RuntimeError("Server not initialized")
+    return _session_registry
+
+
+def _get_search_flow() -> SearchFlow:
+    """Get the search flow singleton."""
+    if _search_flow is None:
+        raise RuntimeError("Server not initialized")
+    return _search_flow
+
+
+def _get_session_repository() -> SearchSessionRepository:
+    """Get the session repository singleton."""
+    if _session_repository is None:
+        raise RuntimeError("Server not initialized")
+    return _session_repository
+
+
+def _get_user_id() -> str:
+    """Get the configured user ID."""
+    return _user_id
+
+
+@asynccontextmanager
+async def lifespan(server: FastMCP) -> AsyncIterator[None]:
+    """
+    Lifespan context manager for MCP server.
+
+    Initializes all components via DI on startup.
+    """
+    global _session_registry, _search_flow, _session_repository, _user_id
+
+    logger.info("Prism MCP server starting")
+
+    config = get_config()
+
+    # Get user_id from environment (MCP server registration)
+    _user_id = os.environ.get("PRISM_USER_ID", DEFAULT_USER_ID)
+    logger.info("User ID configured", extra={"user_id": _user_id})
+
+    # Initialize database
+    db = await init_database(config.database)
+    _session_repository = SearchSessionRepository(db)
+    logger.info("Database initialized")
+
+    # Initialize components via DI
+    _session_registry = SessionRegistry()
+
+    executor = ClaudeExecutor(session_registry=_session_registry)
+    retry_executor = RetryExecutor(executor=executor)
+
+    # All agents use RetryExecutor for consistent retry behavior
+    dispatcher = WorkerDispatcher(executor=retry_executor)
+    synthesizer = ResultSynthesizer(executor=retry_executor)
+
+    _search_flow = SearchFlow(
+        retry_executor=retry_executor,
+        dispatcher=dispatcher,
+        synthesizer=synthesizer,
+        session_registry=_session_registry,
+        session_repository=_session_repository,
+        user_id=_user_id,
+    )
+
+    logger.info("Components initialized")
+
+    yield
+
+    # Cleanup
+    logger.info("Prism MCP server shutting down")
+    if _session_registry:
+        cancelled = await _session_registry.cancel_all()
+        if cancelled:
+            logger.info("Cancelled %d active sessions", cancelled)
+
+    await close_database()
+
+    _session_registry = None
+    _search_flow = None
+    _session_repository = None
+
+
+# Create FastMCP server
+mcp = FastMCP(
+    name="prism",
+    instructions=(
+        "Prism is a unified web search interface with level-based search depth.\n\n"
+        "Search Levels:\n"
+        "- Level 0: Instant Perplexity (direct API, fast)\n"
+        "- Level 1: Quick search (2-3 workers, ~60s)\n"
+        "- Level 2: Normal search (4-6 workers, ~150s)\n"
+        "- Level 3: Deep search (8-12 workers, ~600s)\n\n"
+        "Tools:\n"
+        "- search(query, level?): Execute search at specified depth\n"
+        "- resume(session_id): Resume a previous L1-L3 search\n"
+        "- get_session(session_id): Get session details\n"
+        "- list_sessions(limit?, offset?, search?): List past sessions\n"
+        "- cancel(session_id): Cancel a running search\n"
+        "- cancel_all(): Cancel all running searches"
+    ),
+    lifespan=lifespan,
+)
+
+
+@mcp.tool()
+async def search(
+    query: Annotated[str, "Search query"],
+    level: Annotated[int, "Search depth: 0=instant, 1=quick, 2=normal, 3=deep"] = 1,
+) -> str:
+    """
+    Execute a search with the specified level of depth.
+
+    Level 0 uses direct Perplexity API (fast, no orchestration).
+    Level 1-3 use manager + workers for comprehensive search.
+
+    Returns human-readable YAML with content and metadata.
+    """
+    flow = _get_search_flow()
+    result = await execute_search(flow=flow, query=query, level=level)
+    return serialize_response(result)
+
+
+@mcp.tool()
+async def cancel(
+    session_id: Annotated[str, "Session ID to cancel"],
+) -> str:
+    """
+    Cancel a running search session.
+
+    Gracefully stops the search and returns partial results if available.
+    Returns success even if session not found (idempotent).
+    """
+    registry = _get_session_registry()
+    result = await execute_cancel(registry=registry, session_id=session_id)
+    return serialize_response(result)
+
+
+@mcp.tool()
+async def cancel_all() -> str:
+    """
+    Cancel all running search sessions.
+
+    Gracefully stops all active searches. Returns count of cancelled sessions.
+    Idempotent - returns success even if no sessions were active.
+    """
+    registry = _get_session_registry()
+    cancelled_count = await registry.cancel_all()
+    result = {
+        "success": True,
+        "message": f"Cancelled {cancelled_count} active sessions",
+        "cancelled_count": cancelled_count,
+    }
+    return serialize_response(result)
+
+
+@mcp.tool()
+async def get_session(
+    session_id: Annotated[str, "Session UUID"],
+) -> str:
+    """
+    Get details of a search session.
+
+    Returns session metadata, status, and results if completed.
+    """
+    repo = _get_session_repository()
+    user_id = _get_user_id()
+
+    try:
+        session_uuid = uuid.UUID(session_id)
+    except ValueError:
+        return serialize_response({
+            "success": False,
+            "error": f"Invalid session ID format: {session_id}",
+        })
+
+    session = await repo.get(user_id, session_uuid)
+
+    if session is None:
+        return serialize_response({
+            "success": False,
+            "error": f"Session not found: {session_id}",
+        })
+
+    result: dict[str, Any] = {
+        "success": True,
+        "session": {
+            "id": str(session.id),
+            "query": session.query,
+            "level": session.level,
+            "status": session.status.value,
+            "summary": session.summary,
+            "created_at": session.created_at.isoformat(),
+            "updated_at": session.updated_at.isoformat(),
+            "completed_at": session.completed_at.isoformat() if session.completed_at else None,
+            "duration_ms": session.duration_ms,
+            "error": session.error_message,
+            "resumable": session.claude_session_id is not None and session.level > 0,
+        },
+    }
+
+    if session.result:
+        result["session"]["result"] = session.result
+
+    return serialize_response(result)
+
+
+@mcp.tool()
+async def list_sessions(
+    limit: Annotated[int, "Maximum number of sessions to return"] = 20,
+    offset: Annotated[int, "Number of sessions to skip"] = 0,
+    search: Annotated[str | None, "Search term for summary/query"] = None,
+) -> str:
+    """
+    List search sessions with optional filtering.
+
+    Returns newest sessions first. Use search parameter for fuzzy matching.
+    """
+    repo = _get_session_repository()
+    user_id = _get_user_id()
+
+    limit = max(1, min(limit, 100))
+    offset = max(0, offset)
+
+    sessions = await repo.list_sessions(
+        user_id=user_id,
+        limit=limit,
+        offset=offset,
+        search=search,
+    )
+
+    items = []
+    for session in sessions:
+        summary = session.summary
+        if summary and len(summary) > 150:
+            summary = summary[:150] + "..."
+
+        items.append({
+            "id": str(session.id),
+            "query": session.query[:100] + "..." if len(session.query) > 100 else session.query,
+            "level": session.level,
+            "status": session.status.value,
+            "summary": summary,
+            "created_at": session.created_at.isoformat(),
+            "duration_ms": session.duration_ms,
+            "resumable": session.claude_session_id is not None and session.level > 0,
+        })
+
+    return serialize_response({
+        "success": True,
+        "sessions": items,
+        "count": len(items),
+        "offset": offset,
+        "limit": limit,
+    })
+
+
+@mcp.tool()
+async def resume(
+    session_id: Annotated[str, "Session UUID to resume"],
+    follow_up: Annotated[str, "Follow-up question or instruction"],
+) -> str:
+    """
+    Resume a previous L1-L3 search session with a follow-up query.
+
+    Only works for completed L1-L3 sessions within the retention period.
+    Level 0 sessions are not resumable.
+    """
+    repo = _get_session_repository()
+    user_id = _get_user_id()
+    config = get_config()
+
+    try:
+        session_uuid = uuid.UUID(session_id)
+    except ValueError:
+        return serialize_response({
+            "success": False,
+            "error": f"Invalid session ID format: {session_id}",
+        })
+
+    session = await repo.get(user_id, session_uuid)
+
+    if session is None:
+        return serialize_response({
+            "success": False,
+            "error": f"Session not found: {session_id}",
+        })
+
+    if session.level == 0:
+        return serialize_response({
+            "success": False,
+            "error": "Level 0 sessions are not resumable",
+        })
+
+    if not session.claude_session_id:
+        return serialize_response({
+            "success": False,
+            "error": "Session has no Claude session ID for resume",
+        })
+
+    ttl_days = config.retention.session_ttl_days
+    expiry_cutoff = datetime.now(timezone.utc) - timedelta(days=ttl_days)
+    if session.created_at < expiry_cutoff:
+        return serialize_response({
+            "success": False,
+            "error": f"Session expired (older than {ttl_days} days)",
+            "session_created": session.created_at.isoformat(),
+        })
+
+    return serialize_response({
+        "success": True,
+        "message": "Session is resumable",
+        "session_id": str(session.id),
+        "claude_session_id": session.claude_session_id,
+        "original_query": session.query,
+        "follow_up": follow_up,
+        "note": "Resume functionality requires claude CLI --resume flag integration",
+    })

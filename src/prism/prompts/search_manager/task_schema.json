@@ -1,0 +1,32 @@
+{
+  "type": "object",
+  "required": ["tasks"],
+  "properties": {
+    "reasoning": {
+      "type": "string",
+      "description": "Brief explanation of the search strategy"
+    },
+    "tasks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["query", "agent_type"],
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search query for this task"
+          },
+          "agent_type": {
+            "type": "string",
+            "enum": ["researcher", "tavily", "perplexity"],
+            "description": "Which agent to dispatch"
+          },
+          "context": {
+            "type": "string",
+            "description": "Additional context for the agent"
+          }
+        }
+      }
+    }
+  }
+}

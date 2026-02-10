@@ -1,0 +1,21 @@
+# Prism prompt-model test environment
+# Usage:
+#   podman compose up -d                              # start container
+#   podman exec prism-test python /app/scripts/run_test.py \  # run test
+#     --provider claude --model haiku --query simple
+#   podman compose down                               # stop
+
+services:
+  test:
+    build: .
+    container_name: prism-test
+    command: ["sleep", "infinity"]
+    volumes:
+      - ./scripts:/app/scripts:ro,z
+      - ./prompts:/app/prompts:ro,z
+      - ./queries:/app/queries:ro,z
+      - ./hooks:/app/hooks:ro,z
+      - ./results:/app/results:z
+    userns_mode: keep-id
+    env_file:
+      - ../../.config-local/.env

@@ -1,0 +1,31 @@
+{
+  "hooksConfig": { "enabled": true },
+  "hooks": {
+    "BeforeTool": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /app/hooks/time_hook.py pre",
+            "name": "prism-time-before",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "AfterTool": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /app/hooks/time_hook.py post",
+            "name": "prism-time-after",
+            "timeout": 5000
+          }
+        ]
+      }
+    ]
+  }
+}

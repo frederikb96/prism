@@ -1,0 +1,6 @@
+name: simple
+description: Single-fact lookup, one search should suffice
+query: "What is the current price of Bitcoin in USD?"
+expected:
+  min_sources: 1
+  should_contain: ["price", "USD", "BTC", "Bitcoin"]

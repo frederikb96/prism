@@ -1,0 +1,9 @@
+name: medium
+description: Multi-criteria search requiring cross-referencing
+query: >-
+  Find the top 5 action movies released after 2020 that are under 2 hours long
+  and have an IMDb rating above 7. For each movie provide: title, year, exact
+  runtime, IMDb rating, and a one-line description.
+expected:
+  min_sources: 2
+  should_contain: ["IMDb", "rating", "runtime", "action"]

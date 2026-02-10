@@ -1,0 +1,9 @@
+name: hard
+description: Synthesis question requiring multiple angles and technical depth
+query: >-
+  Compare WebAuthn/passkeys vs TOTP for enterprise SSO deployments. Cover:
+  security properties, phishing resistance, user experience, implementation
+  complexity, and browser/platform support as of 2026.
+expected:
+  min_sources: 3
+  should_contain: ["WebAuthn", "TOTP", "phishing", "security"]

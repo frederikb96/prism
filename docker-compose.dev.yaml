@@ -1,0 +1,50 @@
+# Prism Development Docker Compose
+# Source mounted for hot-reload, /tmp volumes for easy cleanup
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: prism-postgres-dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - /tmp/prism-postgres:/var/lib/postgresql/data:z
+      - ./docker/init:/docker-entrypoint-initdb.d:ro,z
+    environment:
+      POSTGRES_DB: prism
+      POSTGRES_USER: prism
+      POSTGRES_PASSWORD: devpassword
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prism -d prism"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  prism:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: dev
+    container_name: prism-dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8766:8765"
+    volumes:
+      - .:/app:z
+      - /tmp/prism-data:/home/appuser/.local/share/prism:z
+      - /tmp/prism-cache:/home/appuser/.cache/prism:z
+      - ~/.config/prism/prism.yaml:/home/appuser/.config/prism/prism.yaml:ro,z
+    env_file:
+      - ~/.config/prism/.env
+    environment:
+      - PRISM_SERVER_LOG_LEVEL=DEBUG
+      - PRISM_DATABASE_URL=postgresql+asyncpg://prism:devpassword@postgres:5432/prism
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/8765'"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s

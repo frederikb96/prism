@@ -1,0 +1,70 @@
+# Prism Default Configuration
+#
+# This file contains all default values. To override:
+# - Place a custom prism.yaml at ~/.config/prism/prism.yaml
+# - Set environment variables: PRISM_<SECTION>_<KEY> (e.g., PRISM_SERVER_PORT)
+#
+# Loading order: env vars > prism.yaml > config.yaml (this file)
+
+server:
+  port: 8765
+  transport: sse
+  log_level: INFO
+
+search:
+  max_query_length: 10000
+
+levels:
+  0:
+    manager_timeout_seconds: 0
+    worker_timeout_seconds: 60
+    worker_visible_timeout: 60
+  1:
+    manager_timeout_seconds: 30
+    worker_timeout_seconds: 90
+    worker_visible_timeout: 60
+  2:
+    manager_timeout_seconds: 60
+    worker_timeout_seconds: 240
+    worker_visible_timeout: 180
+  3:
+    manager_timeout_seconds: 120
+    worker_timeout_seconds: 720
+    worker_visible_timeout: 600
+
+retry:
+  max_transient_retries: 3
+  base_delay_seconds: 1.0
+  max_delay_seconds: 8.0
+  exponential_base: 2.0
+  max_validation_retries: 5
+
+process:
+  sigterm_timeout_seconds: 2.0
+  sigkill_timeout_seconds: 5.0
+
+synthesizer:
+  model: sonnet
+  default_timeout_seconds: 60
+
+workers:
+  perplexity:
+    model: sonnet
+    default_timeout_seconds: 30
+  tavily:
+    model: sonnet
+    default_timeout_seconds: 60
+  researcher:
+    model: sonnet
+    default_timeout_seconds: 60
+  manager:
+    model: sonnet
+    default_timeout_seconds: 60
+
+database:
+  url: postgresql+asyncpg://prism:prism@localhost:5432/prism
+  pool_size: 20
+  max_overflow: 10
+
+retention:
+  session_ttl_days: 30
