@@ -520,10 +520,10 @@ class TestSearchFlowLevel1_3:
 
     @staticmethod
     def _synthesis_output(session_id: str = "synth-sess") -> ExecutionResult:
-        """Create a successful synthesis result."""
+        """Create a successful synthesis result (plain text in result field)."""
         import json
         return ExecutionResult.from_success(
-            json.dumps({"type": "result", "structured_output": {"response": "synthesized"}}),
+            json.dumps({"type": "result", "result": "synthesized"}),
             session_id,
         )
 

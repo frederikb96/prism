@@ -58,9 +58,9 @@ def _make_search_flow(
 
 
 def _response_output(text: str, session_id: str | None = None) -> ExecutionResult:
-    """Create an ExecutionResult with the {"response": "..."} format."""
+    """Create an ExecutionResult with plain text in the result field."""
     return ExecutionResult.from_success(
-        json.dumps({"type": "result", "structured_output": {"response": text}}),
+        json.dumps({"type": "result", "result": text}),
         session_id,
     )
 
@@ -169,10 +169,10 @@ class TestResumeSessionSuccess:
         assert req.timeout_seconds is None
 
     @pytest.mark.asyncio
-    async def test_resume_uses_response_schema(
+    async def test_resume_has_no_json_schema(
         self, mock_executor: MockExecutor
     ) -> None:
-        """Resume request includes json_schema for structured output."""
+        """Resume request does not use json_schema (plain text output)."""
         flow = _make_search_flow(mock_executor)
         mock_executor.add_result(_response_output("data"))
 
@@ -183,8 +183,7 @@ class TestResumeSessionSuccess:
         )
 
         req, _ = mock_executor.calls[0]
-        assert req.json_schema is not None
-        assert "response" in req.json_schema.get("required", [])
+        assert req.json_schema is None
 
 
 # ---------------------------------------------------------------------------

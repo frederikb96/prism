@@ -26,9 +26,3 @@ These are guidelines, not a strict template. Adapt to what fits the query best:
 - **Agent timing** -- how long each took, any timeouts
 
 {level_guidance}
-
-## Required Output Format
-
-```json
-{"response": "Your complete response text here"}
-```

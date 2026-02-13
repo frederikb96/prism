@@ -677,13 +677,6 @@ class TestManagerAgent:
         assert "search session manager" in content
         assert "claude_search" not in content
 
-    def test_response_schema_loaded(self) -> None:
-        registry = PromptRegistry()
-        schema = registry.get_schema("search_manager/response_schema")
-        assert schema is not None
-        assert "response" in schema["required"]
-        assert schema["properties"]["response"]["type"] == "string"
-
     @pytest.mark.asyncio
     async def test_plan_success(self, mock_executor: MockExecutor) -> None:
         """Manager.plan() creates task plan from keyed-dict output."""
@@ -772,7 +765,7 @@ class TestManagerAgent:
             ExecutionResult.from_success(
                 json.dumps({
                     "type": "result",
-                    "structured_output": {"response": "synthesized answer"},
+                    "result": "synthesized answer",
                 }),
                 "synth-sess",
             )
@@ -823,7 +816,7 @@ class TestManagerAgent:
             ExecutionResult.from_success(
                 json.dumps({
                     "type": "result",
-                    "structured_output": {"response": "follow-up answer"},
+                    "result": "follow-up answer",
                 }),
                 "new-sess",
             )

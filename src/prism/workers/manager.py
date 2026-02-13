@@ -1,8 +1,9 @@
 """
 Manager agent for search session lifecycle.
 
-Handles planning, synthesis, and follow-ups using RetryExecutor
-with schema validation for structured JSON output.
+Handles planning, synthesis, and follow-ups using RetryExecutor.
+Schema validation is used only for search planning (structured JSON).
+Synthesis and follow-up chat return plain text via the CLI result field.
 """
 
 from __future__ import annotations
@@ -95,7 +96,6 @@ class ManagerAgent:
         self._parent_session_id = parent_session_id
         self._registry = get_registry()
         self._task_schema = self._build_task_schema(agent_allocation)
-        self._response_schema = self._load_response_schema()
         self._system_prompt = self._registry.get_content("search_manager/system")
 
     @property
@@ -181,7 +181,6 @@ class ManagerAgent:
             prompt=user_prompt,
             resume_session=self._session_id,
             timeout_seconds=timeout_seconds,
-            json_schema=self._response_schema,
         )
 
         logger.debug(
@@ -190,7 +189,7 @@ class ManagerAgent:
         )
 
         result = await self._executor.execute(
-            request, schema=self._response_schema, parent_session_id=self._parent_session_id
+            request, parent_session_id=self._parent_session_id
         )
 
         if not result.success:
@@ -286,11 +285,10 @@ class ManagerAgent:
             prompt=user_prompt,
             resume_session=self._session_id,
             timeout_seconds=timeout_seconds,
-            json_schema=self._response_schema,
         )
 
         result = await self._executor.execute(
-            request, schema=self._response_schema, parent_session_id=self._parent_session_id
+            request, parent_session_id=self._parent_session_id
         )
 
         if not result.success:
@@ -429,13 +427,6 @@ class ManagerAgent:
                 sections.append(f"### {agent_key}{timing}\n\nFAILED: {error}")
         return "\n\n".join(sections)
 
-    def _load_response_schema(self) -> dict[str, Any]:
-        """Load response schema from file."""
-        schema = self._registry.get_schema("search_manager/response_schema")
-        if schema is None:
-            raise RuntimeError("Response schema not found")
-        return schema
-
     def _parse_task_plan(self, raw_output: str) -> TaskPlan:
         """Parse raw output into TaskPlan."""
         data = json.loads(raw_output)
@@ -453,14 +444,8 @@ class ManagerAgent:
         return TaskPlan.from_keyed_dict(data)
 
     def _parse_response(self, raw_output: str) -> str:
-        """Extract response text from {"response": "..."} format."""
-        data: Any = json.loads(raw_output)
-        if isinstance(data, dict):
-            if "structured_output" in data:
-                data = data["structured_output"]
-            elif "result" in data:
-                result_str = data["result"]
-                data = json.loads(result_str) if isinstance(result_str, str) else result_str
-        if isinstance(data, dict):
-            return str(data.get("response", data))
+        """Extract response text from CLI JSON envelope."""
+        data = json.loads(raw_output)
+        if isinstance(data, dict) and data.get("type") == "result":
+            return str(data.get("result", ""))
         return str(data)
