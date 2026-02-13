@@ -24,6 +24,7 @@ class Session:
     """
 
     session_id: str
+    user_id: str = ""
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     process: CancellableProcess | None = None
     is_active: bool = True
@@ -53,6 +54,7 @@ class SessionRegistry:
         session_id: str,
         process: CancellableProcess | None = None,
         parent_session_id: str | None = None,
+        user_id: str = "",
     ) -> Session:
         """
         Register a new session.
@@ -61,18 +63,28 @@ class SessionRegistry:
             session_id: Unique session identifier
             process: Optional process associated with session
             parent_session_id: Optional parent session to link to
+            user_id: Owner of this session (inherited from parent if empty)
 
         Returns:
             The registered Session object
         """
         async with self._lock:
-            session = Session(session_id=session_id, process=process)
+            resolved_user_id = user_id
 
             if parent_session_id is not None:
                 parent = self._sessions.get(parent_session_id)
                 if parent is not None:
                     parent.children.add(session_id)
-                    session.parent_id = parent_session_id
+                    if not resolved_user_id:
+                        resolved_user_id = parent.user_id
+
+            has_parent = parent_session_id and parent_session_id in self._sessions
+            session = Session(
+                session_id=session_id,
+                user_id=resolved_user_id,
+                process=process,
+                parent_id=parent_session_id if has_parent else None,
+            )
 
             self._sessions[session_id] = session
             return session
@@ -156,9 +168,13 @@ class SessionRegistry:
                 self._sessions[session_id].mark_complete()
         return True
 
-    async def cancel_all(self) -> int:
+    async def cancel_all(self, user_id: str | None = None) -> int:
         """
-        Cancel all active sessions.
+        Cancel active sessions, optionally scoped to a user.
+
+        Args:
+            user_id: If provided, only cancel sessions owned by this user.
+                     If None, cancel all sessions (used for server shutdown).
 
         Returns:
             Number of sessions cancelled
@@ -168,7 +184,9 @@ class SessionRegistry:
             to_cancel = [
                 (sid, s.process)
                 for sid, s in self._sessions.items()
-                if s.is_active and s.process
+                if s.is_active
+                and s.process
+                and (user_id is None or s.user_id == user_id)
             ]
 
         # Cancel all processes in parallel

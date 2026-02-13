@@ -93,8 +93,7 @@ The `X-User-Id` header identifies the user for session scoping. Each user sees o
 **Tools:**
 - `search(query, level=0, providers=None)` - Execute search at specified depth
   - `providers` (L0 only): `["claude_search"]`, `["tavily_search"]`, `["gemini_search"]`, `["perplexity_search"]`, any combination, or `["mix"]` for all 4 in parallel. Default (None): claude_search only.
-- `cancel(session_id)` - Cancel running search
-- `cancel_all()` - Cancel all running searches
+- `cancel_all()` - Cancel all running searches for the current user
 - `get_session(session_id)` - Retrieve session details
 - `list_sessions(limit=20, offset=0, search=None)` - List recent sessions
 - `resume(session_id, follow_up)` - Resume L1-L3 session with follow-up

@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- `cancel_all()` now user-scoped via `X-User-Id` header (each user can only cancel their own sessions)
+- In-memory session tracking includes `user_id` (inherited from parent session for child workers)
 - Container volumes simplified: only persist PostgreSQL data and Claude CLI sessions (`~/.claude`)
 - Removed unused `~/.local/share/prism` and `~/.cache/prism` container mounts
 - MCP transport migrated from SSE to Streamable HTTP (`streamable-http`)
@@ -19,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- Parent-child session tracking: `cancel(session_id)` now cascades to child worker processes
+- Parent-child session tracking with cascading cancellation
 - Parallel `cancel_all()` via `asyncio.gather` (was sequential, could exceed Docker stop timeout)
 - `init: true` in both Docker Compose files for zombie process reaping
 - Production entrypoint (`docker/entrypoint-prod.sh`) with DB URL construction from Docker secrets
@@ -59,6 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Removed
 
+- `cancel(session_id)` MCP tool (impractical: session_id unknown until search completes; use `cancel_all()` instead)
 - Direct Perplexity API integration for L0 (replaced by unified worker approach)
 - Old worker names: researcher, tavily, perplexity (replaced by *_search naming)
 

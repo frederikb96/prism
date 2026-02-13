@@ -24,7 +24,7 @@ from prism.database import (
 )
 from prism.mcp_serializer import serialize_response
 from prism.orchestrator import SearchFlow, WorkerDispatcher
-from prism.tools import execute_cancel, execute_fetch, execute_resume, execute_search
+from prism.tools import execute_fetch, execute_resume, execute_search
 
 logger = logging.getLogger(__name__)
 
@@ -140,8 +140,7 @@ mcp = FastMCP(
         "- resume(session_id): Resume a previous L1-L3 search\n"
         "- get_session(session_id): Get session details\n"
         "- list_sessions(limit?, offset?, search?): List past sessions\n"
-        "- cancel(session_id): Cancel a running search\n"
-        "- cancel_all(): Cancel all running searches"
+        "- cancel_all(): Cancel all running searches for the current user"
     ),
     lifespan=lifespan,
 )
@@ -189,30 +188,17 @@ async def fetch(
 
 
 @mcp.tool()
-async def cancel(
-    session_id: Annotated[str, "Session ID to cancel"],
-) -> str:
-    """
-    Cancel a running search session.
-
-    Gracefully stops the search and returns partial results if available.
-    Returns success even if session not found (idempotent).
-    """
-    registry = _get_session_registry()
-    result = await execute_cancel(registry=registry, session_id=session_id)
-    return serialize_response(result)
-
-
-@mcp.tool()
 async def cancel_all() -> str:
     """
-    Cancel all running search sessions.
+    Cancel all running search sessions for the current user.
 
-    Gracefully stops all active searches. Returns count of cancelled sessions.
+    Gracefully stops all active searches owned by the requesting user.
+    Returns count of cancelled sessions.
     Idempotent - returns success even if no sessions were active.
     """
     registry = _get_session_registry()
-    cancelled_count = await registry.cancel_all()
+    user_id = _resolve_user_id()
+    cancelled_count = await registry.cancel_all(user_id=user_id)
     result = {
         "success": True,
         "message": f"Cancelled {cancelled_count} active sessions",

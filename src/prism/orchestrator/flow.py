@@ -159,7 +159,7 @@ class SearchFlow:
         )
 
         try:
-            await self._session_registry.register(session_id)
+            await self._session_registry.register(session_id, user_id=user_id)
 
             if level == 0:
                 result = await self._execute_level_0(query, session_id, providers)

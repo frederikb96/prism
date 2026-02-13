@@ -17,9 +17,16 @@ class TestSession:
         session = Session(session_id="test-123")
 
         assert session.session_id == "test-123"
+        assert session.user_id == ""
         assert session.is_active is True
         assert session.process is None
         assert session.created_at is not None
+
+    def test_session_with_user_id(self) -> None:
+        """Session stores user_id."""
+        session = Session(session_id="test-123", user_id="alice")
+
+        assert session.user_id == "alice"
 
     def test_mark_complete(self) -> None:
         """mark_complete updates state."""
@@ -134,11 +141,11 @@ class TestSessionRegistryCancellation:
     async def test_cancel_all_sessions(
         self, session_registry: SessionRegistry
     ) -> None:
-        """cancel_all terminates all active processes."""
+        """cancel_all without user_id terminates all active processes."""
         mock_process1 = AsyncMock()
         mock_process2 = AsyncMock()
-        await session_registry.register("sess-1", process=mock_process1)
-        await session_registry.register("sess-2", process=mock_process2)
+        await session_registry.register("sess-1", process=mock_process1, user_id="alice")
+        await session_registry.register("sess-2", process=mock_process2, user_id="bob")
         await session_registry.register("sess-3")  # No process
 
         cancelled = await session_registry.cancel_all()
@@ -146,6 +153,39 @@ class TestSessionRegistryCancellation:
         assert cancelled == 2
         mock_process1.cancel.assert_called_once()
         mock_process2.cancel.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_cancel_all_scoped_to_user(
+        self, session_registry: SessionRegistry
+    ) -> None:
+        """cancel_all with user_id only cancels that user's sessions."""
+        proc_alice = AsyncMock()
+        proc_bob = AsyncMock()
+        await session_registry.register("sess-1", process=proc_alice, user_id="alice")
+        await session_registry.register("sess-2", process=proc_bob, user_id="bob")
+
+        cancelled = await session_registry.cancel_all(user_id="alice")
+
+        assert cancelled == 1
+        proc_alice.cancel.assert_called_once()
+        proc_bob.cancel.assert_not_called()
+
+        # bob's session still active
+        bob_session = await session_registry.get("sess-2")
+        assert bob_session.is_active is True
+
+    @pytest.mark.asyncio
+    async def test_cancel_all_user_no_sessions(
+        self, session_registry: SessionRegistry
+    ) -> None:
+        """cancel_all with unknown user_id returns 0."""
+        proc = AsyncMock()
+        await session_registry.register("sess-1", process=proc, user_id="alice")
+
+        cancelled = await session_registry.cancel_all(user_id="nobody")
+
+        assert cancelled == 0
+        proc.cancel.assert_not_called()
 
 
 class TestSessionRegistryListing:
@@ -237,6 +277,30 @@ class TestSessionRegistryParentChild:
         assert child.parent_id == "parent"
         parent = await session_registry.get("parent")
         assert "child-1" in parent.children
+
+    @pytest.mark.asyncio
+    async def test_child_inherits_user_id_from_parent(
+        self, session_registry: SessionRegistry
+    ) -> None:
+        """Child sessions inherit user_id from parent when not explicitly set."""
+        await session_registry.register("parent", user_id="alice")
+        child = await session_registry.register(
+            "child-1", parent_session_id="parent"
+        )
+
+        assert child.user_id == "alice"
+
+    @pytest.mark.asyncio
+    async def test_child_explicit_user_id_overrides_parent(
+        self, session_registry: SessionRegistry
+    ) -> None:
+        """Explicit user_id on child takes precedence over parent."""
+        await session_registry.register("parent", user_id="alice")
+        child = await session_registry.register(
+            "child-1", parent_session_id="parent", user_id="bob"
+        )
+
+        assert child.user_id == "bob"
 
     @pytest.mark.asyncio
     async def test_register_with_nonexistent_parent(
@@ -350,16 +414,37 @@ class TestSessionRegistryParallelCancelAll:
     async def test_cancel_all_calls_all_processes(
         self, session_registry: SessionRegistry
     ) -> None:
-        """cancel_all cancels all processes (verifies gather-based parallelism)."""
+        """cancel_all without user_id cancels all processes."""
         processes = [AsyncMock() for _ in range(5)]
         for i, proc in enumerate(processes):
-            await session_registry.register(f"sess-{i}", process=proc)
+            await session_registry.register(f"sess-{i}", process=proc, user_id="alice")
 
         cancelled = await session_registry.cancel_all()
 
         assert cancelled == 5
         for proc in processes:
             proc.cancel.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_cancel_all_user_scoped_parallel(
+        self, session_registry: SessionRegistry
+    ) -> None:
+        """User-scoped cancel_all cancels only that user's processes in parallel."""
+        alice_procs = [AsyncMock() for _ in range(3)]
+        bob_procs = [AsyncMock() for _ in range(2)]
+
+        for i, proc in enumerate(alice_procs):
+            await session_registry.register(f"alice-{i}", process=proc, user_id="alice")
+        for i, proc in enumerate(bob_procs):
+            await session_registry.register(f"bob-{i}", process=proc, user_id="bob")
+
+        cancelled = await session_registry.cancel_all(user_id="alice")
+
+        assert cancelled == 3
+        for proc in alice_procs:
+            proc.cancel.assert_called_once()
+        for proc in bob_procs:
+            proc.cancel.assert_not_called()
 
 
 class TestSessionRegistryConcurrency:
