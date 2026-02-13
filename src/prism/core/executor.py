@@ -99,6 +99,7 @@ class ClaudeExecutor:
         request: ExecutionRequest,
         schema: dict[str, Any] | None = None,
         session_id: str | None = None,
+        parent_session_id: str | None = None,
     ) -> ExecutionResult:
         """
         Execute a Claude CLI command.
@@ -108,6 +109,7 @@ class ClaudeExecutor:
         Args:
             request: Execution request with prompt and options
             session_id: Optional session ID for tracking (generated if not provided)
+            parent_session_id: Optional parent session for cancel tracking
 
         Returns:
             ExecutionResult with output and metadata
@@ -146,7 +148,9 @@ class ClaudeExecutor:
 
         # Register session if we have a registry
         if self._session_registry:
-            await self._session_registry.register(session_id, process)
+            await self._session_registry.register(
+                session_id, process, parent_session_id=parent_session_id
+            )
 
         try:
             result = await process.run()

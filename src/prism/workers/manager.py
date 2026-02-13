@@ -84,12 +84,14 @@ class ManagerAgent:
         agent_allocation: dict[str, int],
         level: int,
         session_id: str | None = None,
+        parent_session_id: str | None = None,
     ) -> None:
         self._executor = executor
         self._model = model
         self._agent_allocation = agent_allocation
         self._level = level
         self._session_id = session_id
+        self._parent_session_id = parent_session_id
         self._registry = get_registry()
         self._task_schema = self._build_task_schema(agent_allocation)
         self._response_schema = self._load_response_schema()
@@ -125,7 +127,9 @@ class ManagerAgent:
             extra={"query_length": len(query), "timeout": timeout_seconds},
         )
 
-        result = await self._executor.execute(request, schema=self._task_schema)
+        result = await self._executor.execute(
+            request, schema=self._task_schema, parent_session_id=self._parent_session_id
+        )
 
         if not result.success:
             return AgentResult.from_error(
@@ -184,7 +188,9 @@ class ManagerAgent:
             extra={"result_count": len(results), "resume": self._session_id},
         )
 
-        result = await self._executor.execute(request, schema=self._response_schema)
+        result = await self._executor.execute(
+            request, schema=self._response_schema, parent_session_id=self._parent_session_id
+        )
 
         if not result.success:
             return AgentResult.from_error(
@@ -228,7 +234,9 @@ class ManagerAgent:
             json_schema=schema,
         )
 
-        result = await self._executor.execute(request, schema=schema)
+        result = await self._executor.execute(
+            request, schema=schema, parent_session_id=self._parent_session_id
+        )
 
         if not result.success:
             return AgentResult.from_error(
@@ -279,7 +287,9 @@ class ManagerAgent:
             json_schema=self._response_schema,
         )
 
-        result = await self._executor.execute(request, schema=self._response_schema)
+        result = await self._executor.execute(
+            request, schema=self._response_schema, parent_session_id=self._parent_session_id
+        )
 
         if not result.success:
             return AgentResult.from_error(

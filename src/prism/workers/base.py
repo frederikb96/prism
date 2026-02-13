@@ -26,6 +26,7 @@ class ExecutorProtocol(Protocol):
         request: ExecutionRequest,
         schema: dict[str, Any] | None = None,
         session_id: str | None = None,
+        parent_session_id: str | None = None,
     ) -> ExecutionResult:
         """Execute a request and return result."""
         ...
@@ -109,6 +110,7 @@ class Agent(ABC):
         self,
         prompt: str,
         timeout_seconds: int | None = None,
+        parent_session_id: str | None = None,
     ) -> AgentResult:
         """
         Execute the agent with the given prompt.
@@ -116,6 +118,7 @@ class Agent(ABC):
         Args:
             prompt: The search/task prompt
             timeout_seconds: Optional timeout override
+            parent_session_id: Optional parent session for cancel tracking
 
         Returns:
             AgentResult with content or error

@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Parent-child session tracking: `cancel(session_id)` now cascades to child worker processes
+- Parallel `cancel_all()` via `asyncio.gather` (was sequential, could exceed Docker stop timeout)
+- `init: true` in both Docker Compose files for zombie process reaping
+- Production entrypoint (`docker/entrypoint-prod.sh`) with DB URL construction from Docker secrets
+- Alembic-only schema management: migrations run in entrypoints, `create_all` removed
 - Gemini CLI as first-class search worker (gemini_search) via GeminiExecutor
 - Multi-provider Level 0: `providers` parameter for explicit worker selection, `"mix"` for all 4 in parallel
 - Worker factory (`workers/factory.py`) for unified worker creation across all levels
@@ -37,6 +42,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Hook log temp files (`/tmp/prism-hook-*.log`) now deleted after parsing
+- Config loader resilient to `prism.yaml` being a directory (Podman mount edge case)
 - Queries containing curly braces (`{`, `}`) no longer crash prompt rendering
 - Post-hook now signals "time expired" to models when budget is exhausted
 

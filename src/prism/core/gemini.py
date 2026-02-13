@@ -107,6 +107,7 @@ class GeminiExecutor:
         request: ExecutionRequest,
         schema: dict[str, Any] | None = None,
         session_id: str | None = None,
+        parent_session_id: str | None = None,
     ) -> ExecutionResult:
         """
         Execute a Gemini CLI command with transient retry.
@@ -115,6 +116,7 @@ class GeminiExecutor:
             request: Execution request with prompt and options
             schema: Ignored (Gemini has no --json-schema support)
             session_id: Optional session ID for tracking
+            parent_session_id: Optional parent session for cancel tracking
 
         Returns:
             ExecutionResult with output and metadata
@@ -134,7 +136,7 @@ class GeminiExecutor:
                 )
                 await asyncio.sleep(delay)
 
-            result = await self._execute_once(request, session_id)
+            result = await self._execute_once(request, session_id, parent_session_id)
 
             if result.is_cancelled:
                 return result
@@ -156,6 +158,7 @@ class GeminiExecutor:
         self,
         request: ExecutionRequest,
         session_id: str,
+        parent_session_id: str | None = None,
     ) -> ExecutionResult:
         """Execute a single Gemini CLI invocation."""
         cmd = self.build_command(request)
@@ -180,7 +183,9 @@ class GeminiExecutor:
         )
 
         if self._session_registry:
-            await self._session_registry.register(session_id, process)
+            await self._session_registry.register(
+                session_id, process, parent_session_id=parent_session_id
+            )
 
         try:
             result = await process.run()

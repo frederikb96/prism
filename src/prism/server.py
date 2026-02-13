@@ -24,7 +24,7 @@ from prism.database import (
 )
 from prism.mcp_serializer import serialize_response
 from prism.orchestrator import SearchFlow, WorkerDispatcher
-from prism.tools import execute_cancel, execute_resume, execute_search
+from prism.tools import execute_cancel, execute_fetch, execute_resume, execute_search
 
 logger = logging.getLogger(__name__)
 
@@ -139,6 +139,7 @@ mcp = FastMCP(
         "- Default (None) = claude_search only\n\n"
         "Tools:\n"
         "- search(query, level?, providers?): Execute search at specified depth\n"
+        "- fetch(url): Extract content from a URL via Tavily (advanced extraction)\n"
         "- resume(session_id): Resume a previous L1-L3 search\n"
         "- get_session(session_id): Get session details\n"
         "- list_sessions(limit?, offset?, search?): List past sessions\n"
@@ -170,6 +171,20 @@ async def search(
     """
     flow = _get_search_flow()
     result = await execute_search(flow=flow, query=query, level=level, providers=providers)
+    return serialize_response(result)
+
+
+@mcp.tool()
+async def fetch(
+    url: Annotated[str, "URL to extract content from"],
+) -> str:
+    """
+    Extract content from a single URL via Tavily.
+
+    Uses advanced extraction depth for thorough content retrieval.
+    Returns raw page content, images, and metadata.
+    """
+    result = await execute_fetch(url=url)
     return serialize_response(result)
 
 

@@ -187,7 +187,7 @@ class TestExecute:
 
         call_count = 0
 
-        async def mock_execute_once(req, sid):
+        async def mock_execute_once(req, sid, parent_sid=None):
             nonlocal call_count
             call_count += 1
             return ExecutionResult.from_timeout(1)
@@ -209,7 +209,7 @@ class TestExecute:
 
         call_count = 0
 
-        async def mock_execute_once(req, sid):
+        async def mock_execute_once(req, sid, parent_sid=None):
             nonlocal call_count
             call_count += 1
             if call_count == 1:
@@ -232,7 +232,7 @@ class TestExecute:
 
         call_count = 0
 
-        async def mock_execute_once(req, sid):
+        async def mock_execute_once(req, sid, parent_sid=None):
             nonlocal call_count
             call_count += 1
             return ExecutionResult.from_error("Invalid API key")
@@ -251,7 +251,7 @@ class TestExecute:
             prompt="Test", model="gemini-2.5-flash", timeout_seconds=10,
         )
 
-        async def mock_execute_once(req, sid):
+        async def mock_execute_once(req, sid, parent_sid=None):
             return ExecutionResult.from_cancelled()
 
         with patch.object(executor, "_execute_once", side_effect=mock_execute_once):

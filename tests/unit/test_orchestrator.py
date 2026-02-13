@@ -366,7 +366,7 @@ class TestSearchFlowLevel0:
 
         call_count = 0
 
-        async def _execute_side_effect(prompt, timeout_seconds=None):
+        async def _execute_side_effect(prompt, timeout_seconds=None, parent_session_id=None):
             nonlocal call_count
             call_count += 1
             return AgentResult.from_success(content=f"result {call_count}")
@@ -453,7 +453,7 @@ class TestSearchFlowLevel0:
 
         call_count = 0
 
-        async def _execute_side_effect(prompt, timeout_seconds=None):
+        async def _execute_side_effect(prompt, timeout_seconds=None, parent_session_id=None):
             nonlocal call_count
             call_count += 1
             if call_count == 1:

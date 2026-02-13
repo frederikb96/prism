@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -280,7 +281,10 @@ class SearchFlow:
 
         worker_starts = [time.monotonic()] * len(workers)
         results = await asyncio.gather(
-            *[w.execute(query, timeout_seconds=timeout) for w in workers],
+            *[
+                w.execute(query, timeout_seconds=timeout, parent_session_id=session_id)
+                for w in workers
+            ],
             return_exceptions=True,
         )
 
@@ -302,6 +306,10 @@ class SearchFlow:
             w_start = getattr(worker, "worker_start_time", None)
             if log_path and w_start:
                 hook_data = parse_hook_log_detailed(log_path, w_start)
+                try:
+                    os.unlink(log_path)
+                except OSError:
+                    pass
 
             model = getattr(worker, "worker_model", "unknown")
             content_len = len(result.content) if isinstance(result.content, str) else 0
@@ -384,6 +392,7 @@ class SearchFlow:
             model=manager_model_cfg.model,
             agent_allocation=level_config.agent_allocation,
             level=level,
+            parent_session_id=session_id,
         )
 
         logger.debug("Manager creating task plan", extra={"search_level": level})
@@ -447,6 +456,7 @@ class SearchFlow:
             worker_timeout=level_config.worker_timeout_seconds,
             visible_timeout=level_config.worker_visible_timeout,
             level=level,
+            parent_session_id=session_id,
         )
 
         successful_count = sum(1 for r in worker_results if r.success)

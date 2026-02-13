@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 from typing import TYPE_CHECKING
 
@@ -28,7 +29,12 @@ def _collect_hook_data(worker: object, start: float) -> dict | None:
     log_path = getattr(worker, "hook_log_path", None)
     start_time = getattr(worker, "worker_start_time", None)
     if log_path and start_time:
-        return parse_hook_log_detailed(log_path, start_time)
+        data = parse_hook_log_detailed(log_path, start_time)
+        try:
+            os.unlink(log_path)
+        except OSError:
+            pass
+        return data
     return None
 
 
@@ -54,6 +60,7 @@ class WorkerDispatcher:
         timeout: int,
         visible_timeout: int,
         level: int,
+        parent_session_id: str | None = None,
     ) -> AgentResult:
         """Execute a single task with its assigned worker. Tracks wall time."""
         from prism.workers.base import AgentResult
@@ -81,7 +88,9 @@ class WorkerDispatcher:
                 },
             )
 
-            result = await worker.execute(task.query, timeout_seconds=timeout)
+            result = await worker.execute(
+                task.query, timeout_seconds=timeout, parent_session_id=parent_session_id
+            )
             wall_time = round(time.monotonic() - start, 1)
             result.metadata["agent_key"] = agent_key
             result.metadata["wall_time_s"] = wall_time
@@ -123,6 +132,7 @@ class WorkerDispatcher:
         worker_timeout: int,
         visible_timeout: int,
         level: int,
+        parent_session_id: str | None = None,
     ) -> list[AgentResult]:
         """Dispatch all tasks in parallel."""
         if not task_plan.tasks:
@@ -141,7 +151,9 @@ class WorkerDispatcher:
 
         results = await asyncio.gather(
             *[
-                self._execute_task(task, worker_timeout, visible_timeout, level)
+                self._execute_task(
+                    task, worker_timeout, visible_timeout, level, parent_session_id
+                )
                 for task in task_plan.tasks
             ],
             return_exceptions=True,

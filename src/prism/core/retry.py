@@ -87,6 +87,7 @@ class RetryExecutor:
         request: ExecutionRequest,
         schema: dict[str, Any] | None = None,
         session_id: str | None = None,
+        parent_session_id: str | None = None,
     ) -> ExecutionResult:
         """
         Execute request with two-tier retry logic.
@@ -95,6 +96,7 @@ class RetryExecutor:
             request: Execution request
             schema: Optional JSON schema for output validation
             session_id: Optional session ID for tracking
+            parent_session_id: Optional parent session for cancel tracking
         """
         current_request = request
         last_result: ExecutionResult | None = None
@@ -113,6 +115,7 @@ class RetryExecutor:
             result = await self._execute_with_transient_retries(
                 current_request,
                 session_id=last_session_id,
+                parent_session_id=parent_session_id,
             )
 
             if result.session_id:
@@ -156,6 +159,7 @@ class RetryExecutor:
         self,
         request: ExecutionRequest,
         session_id: str | None = None,
+        parent_session_id: str | None = None,
     ) -> ExecutionResult:
         """
         Execute with retries for transient failures only.
@@ -163,6 +167,7 @@ class RetryExecutor:
         Args:
             request: Execution request
             session_id: Optional session ID
+            parent_session_id: Optional parent session for cancel tracking
         """
         last_error: Exception | None = None
 
@@ -181,7 +186,9 @@ class RetryExecutor:
 
             try:
                 result = await self._executor.execute(
-                    request, session_id=session_id
+                    request,
+                    session_id=session_id,
+                    parent_session_id=parent_session_id,
                 )
 
                 if result.is_timeout or result.is_cancelled:

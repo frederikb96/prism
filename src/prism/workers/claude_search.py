@@ -57,6 +57,7 @@ class ClaudeSearchAgent(Agent):
         self,
         prompt: str,
         timeout_seconds: int | None = None,
+        parent_session_id: str | None = None,
     ) -> AgentResult:
         timeout = timeout_seconds if timeout_seconds is not None else self._timeout
         system_prompt = get_registry().build_system_prompt("websearch")
@@ -79,7 +80,9 @@ class ClaudeSearchAgent(Agent):
             extra={"prompt_length": len(prompt), "timeout": timeout},
         )
 
-        result = await self._executor.execute(request)
+        result = await self._executor.execute(
+            request, parent_session_id=parent_session_id
+        )
 
         if not result.success:
             return AgentResult.from_error(

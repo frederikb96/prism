@@ -21,5 +21,8 @@ RESUME_FOLLOW_UP = (
     "Name only one movie from the previous search result which would be the underdog and why?"
 )
 
+# Test 6: Fetch (Tavily extract wrapper)
+FETCH_URL = "https://www.iana.org/help/example-domains"
+
 # Ordered test list
-ALL_TESTS = ["l0_default", "l0_mix", "l1", "cancel", "resume"]
+ALL_TESTS = ["l0_default", "l0_mix", "l1", "cancel", "resume", "fetch"]

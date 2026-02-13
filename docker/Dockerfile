@@ -14,6 +14,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
+# Install gosu for entrypoint user switching (both dev and prod)
+RUN apt-get update && apt-get install -y --no-install-recommends gosu \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install Gemini CLI for workers
 RUN npm install -g @google/gemini-cli@0.28.1
 
@@ -53,9 +57,7 @@ RUN mkdir -p /home/appuser/.config/prism \
     /home/appuser/.cache/prism \
     && chown -R appuser:appuser /home/appuser/.config /home/appuser/.local /home/appuser/.cache
 
-# Install gosu for entrypoint user switching
-RUN apt-get update && apt-get install -y --no-install-recommends gosu \
-    && rm -rf /var/lib/apt/lists/*
+# gosu already installed in base stage
 
 # Health check
 HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
@@ -70,27 +72,29 @@ ENTRYPOINT ["/entrypoint.sh"]
 # =============================================================================
 FROM base AS prod
 
-# Copy source code
-COPY pyproject.toml README.md ./
+# Copy source code and Alembic config
+COPY pyproject.toml README.md alembic.ini ./
 COPY src/ ./src/
 COPY config/ ./config/
 COPY hooks/ ./hooks/
+COPY alembic/ ./alembic/
 
 # Install package
 RUN uv pip install --system --no-cache-dir . \
     && chmod +x /app/hooks/*.py
 
-# Switch to non-root user
-USER appuser
-
 # Create XDG directories
 RUN mkdir -p /home/appuser/.config/prism \
     /home/appuser/.local/share/prism \
-    /home/appuser/.cache/prism
+    /home/appuser/.cache/prism \
+    && chown -R appuser:appuser /home/appuser/.config /home/appuser/.local /home/appuser/.cache
+
+# Entrypoint runs migrations then starts server
+COPY docker/entrypoint-prod.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD curl -sf -o /dev/null --max-time 2 http://localhost:8765/ || test $? -eq 22
 
-# Default command
-CMD ["python", "-m", "prism"]
+ENTRYPOINT ["/entrypoint.sh"]

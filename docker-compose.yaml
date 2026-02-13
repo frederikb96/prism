@@ -8,6 +8,7 @@ services:
       dockerfile: docker/Dockerfile
       target: prod
     container_name: prism
+    init: true
     restart: always
     ports:
       - "8765:8765"
@@ -15,12 +16,13 @@ services:
       # XDG-compliant bind mounts for data persistence
       - ~/.local/share/prism:/home/appuser/.local/share/prism:z
       - ~/.cache/prism:/home/appuser/.cache/prism:z
-      # Config override (read-only)
       - ~/.config/prism/prism.yaml:/home/appuser/.config/prism/prism.yaml:ro,z
     environment:
       - PRISM_SERVER_LOG_LEVEL=INFO
     env_file:
       - ~/.config/prism/.env
+    secrets:
+      - postgres_password
     healthcheck:
       test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/8765'"]
       interval: 30s

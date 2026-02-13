@@ -37,6 +37,7 @@ from fastmcp import Client
 from fixtures import (
     ALL_TESTS,
     CANCEL_QUERY,
+    FETCH_URL,
     L0_DEFAULT_QUERY,
     L0_MIX_QUERY,
     L1_QUERY,
@@ -63,6 +64,7 @@ TIMEOUTS: dict[str, int] = {
     "l1": 300,
     "cancel": 30,
     "resume": 120,
+    "fetch": 60,
 }
 
 CANCEL_DELAY_S = 5
@@ -428,6 +430,64 @@ class TestRunner:
                     passed=False,
                     duration=duration,
                     error=f"Content too short: {len(content)} chars (expected >= 50)",
+                    response=parsed,
+                )
+
+            return TestResult(
+                name=name,
+                passed=True,
+                duration=duration,
+                response=parsed,
+            )
+
+        except asyncio.TimeoutError:
+            return TestResult(
+                name=name,
+                passed=False,
+                duration=time.time() - start,
+                error=f"Timeout after {timeout}s",
+            )
+        except Exception as e:
+            return TestResult(
+                name=name,
+                passed=False,
+                duration=time.time() - start,
+                error=str(e),
+            )
+
+    async def test_fetch(self) -> TestResult:
+        """Fetch content from example.com via Tavily extract wrapper."""
+        name = "fetch"
+        timeout = TIMEOUTS[name]
+        start = time.time()
+
+        try:
+            async with Client(self.sse_url) as client:
+                raw = await asyncio.wait_for(
+                    client.call_tool("fetch", {"url": FETCH_URL}),
+                    timeout=timeout,
+                )
+
+            duration = time.time() - start
+            text = raw.content[0].text if raw.content else ""
+            parsed = self._parse_response(text)
+
+            if not parsed.get("success"):
+                return TestResult(
+                    name=name,
+                    passed=False,
+                    duration=duration,
+                    error=parsed.get("error", "Unknown error"),
+                    response=parsed,
+                )
+
+            raw_content = parsed.get("raw_content", "")
+            if len(raw_content) < 10:
+                return TestResult(
+                    name=name,
+                    passed=False,
+                    duration=duration,
+                    error=f"raw_content too short: {len(raw_content)} chars",
                     response=parsed,
                 )
 

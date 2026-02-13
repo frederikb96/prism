@@ -18,8 +18,6 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from prism.database.models import Base
-
 if TYPE_CHECKING:
     from prism.config import DatabaseConfig
 
@@ -62,7 +60,7 @@ class DatabaseConnection:
         """
         Initialize the database engine and session factory.
 
-        Creates tables if they don't exist.
+        Schema is managed exclusively by Alembic migrations.
         """
         self._engine = create_async_engine(
             self._config.url,
@@ -76,9 +74,6 @@ class DatabaseConnection:
             class_=AsyncSession,
             expire_on_commit=False,
         )
-
-        async with self._engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
 
         url_safe = self._config.url.split("@")[-1] if "@" in self._config.url else "***"
         logger.info("Database initialized", extra={"url": url_safe})

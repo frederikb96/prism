@@ -27,6 +27,7 @@ services:
       dockerfile: docker/Dockerfile
       target: dev
     container_name: prism-dev
+    init: true
     depends_on:
       postgres:
         condition: service_healthy

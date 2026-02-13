@@ -30,6 +30,7 @@ class MockExecutor:
         request: ExecutionRequest,
         schema: dict | None = None,
         session_id: str | None = None,
+        parent_session_id: str | None = None,
     ) -> ExecutionResult:
         """Record call and return next queued result."""
         self.calls.append((request, session_id))

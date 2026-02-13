@@ -221,6 +221,147 @@ class TestSessionRegistryCleanup:
         assert removed == 0
 
 
+class TestSessionRegistryParentChild:
+    """Test parent-child session tracking."""
+
+    @pytest.mark.asyncio
+    async def test_register_with_parent_links_child(
+        self, session_registry: SessionRegistry
+    ) -> None:
+        """Registering with parent_session_id creates bidirectional link."""
+        await session_registry.register("parent")
+        child = await session_registry.register(
+            "child-1", parent_session_id="parent"
+        )
+
+        assert child.parent_id == "parent"
+        parent = await session_registry.get("parent")
+        assert "child-1" in parent.children
+
+    @pytest.mark.asyncio
+    async def test_register_with_nonexistent_parent(
+        self, session_registry: SessionRegistry
+    ) -> None:
+        """Registering with unknown parent_session_id still creates session."""
+        child = await session_registry.register(
+            "child-1", parent_session_id="ghost"
+        )
+
+        assert child.parent_id is None
+        assert child.session_id == "child-1"
+
+    @pytest.mark.asyncio
+    async def test_cancel_parent_cascades_to_children(
+        self, session_registry: SessionRegistry
+    ) -> None:
+        """Cancelling a parent with no process cancels all child processes."""
+        await session_registry.register("parent")
+
+        proc1, proc2 = AsyncMock(), AsyncMock()
+        await session_registry.register("child-1", process=proc1, parent_session_id="parent")
+        await session_registry.register("child-2", process=proc2, parent_session_id="parent")
+
+        result = await session_registry.cancel("parent")
+
+        assert result is True
+        proc1.cancel.assert_called_once()
+        proc2.cancel.assert_called_once()
+
+        parent = await session_registry.get("parent")
+        assert parent.is_active is False
+
+        child1 = await session_registry.get("child-1")
+        assert child1.is_active is False
+
+    @pytest.mark.asyncio
+    async def test_cancel_parent_no_children_returns_false(
+        self, session_registry: SessionRegistry
+    ) -> None:
+        """Cancelling a parent with no process and no children returns False."""
+        await session_registry.register("parent")
+
+        result = await session_registry.cancel("parent")
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_cancel_parent_children_no_process_returns_false(
+        self, session_registry: SessionRegistry
+    ) -> None:
+        """Cancelling parent whose children also have no processes returns False."""
+        await session_registry.register("parent")
+        await session_registry.register("child-1", parent_session_id="parent")
+
+        result = await session_registry.cancel("parent")
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_unregister_child_removes_from_parent(
+        self, session_registry: SessionRegistry
+    ) -> None:
+        """Unregistering a child removes it from parent's children set."""
+        await session_registry.register("parent")
+        await session_registry.register("child-1", parent_session_id="parent")
+        await session_registry.register("child-2", parent_session_id="parent")
+
+        await session_registry.unregister("child-1")
+
+        parent = await session_registry.get("parent")
+        assert "child-1" not in parent.children
+        assert "child-2" in parent.children
+
+    @pytest.mark.asyncio
+    async def test_multiple_children_registered(
+        self, session_registry: SessionRegistry
+    ) -> None:
+        """Multiple children correctly tracked in parent's children set."""
+        await session_registry.register("parent")
+
+        for i in range(5):
+            await session_registry.register(
+                f"child-{i}", parent_session_id="parent"
+            )
+
+        parent = await session_registry.get("parent")
+        assert len(parent.children) == 5
+
+    @pytest.mark.asyncio
+    async def test_cancel_parent_partial_children_with_process(
+        self, session_registry: SessionRegistry
+    ) -> None:
+        """Only children with processes are cancelled."""
+        await session_registry.register("parent")
+
+        proc = AsyncMock()
+        await session_registry.register("child-1", process=proc, parent_session_id="parent")
+        await session_registry.register("child-2", parent_session_id="parent")
+
+        result = await session_registry.cancel("parent")
+
+        assert result is True
+        proc.cancel.assert_called_once()
+
+
+class TestSessionRegistryParallelCancelAll:
+    """Verify cancel_all uses parallel cancellation."""
+
+    @pytest.mark.asyncio
+    async def test_cancel_all_calls_all_processes(
+        self, session_registry: SessionRegistry
+    ) -> None:
+        """cancel_all cancels all processes (verifies gather-based parallelism)."""
+        processes = [AsyncMock() for _ in range(5)]
+        for i, proc in enumerate(processes):
+            await session_registry.register(f"sess-{i}", process=proc)
+
+        cancelled = await session_registry.cancel_all()
+
+        assert cancelled == 5
+        for proc in processes:
+            proc.cancel.assert_called_once()
+
+
 class TestSessionRegistryConcurrency:
     """Test thread-safety under concurrent access."""
 

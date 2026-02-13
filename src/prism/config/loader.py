@@ -125,7 +125,7 @@ def _load_config() -> dict[str, Any]:
     with open(config_path) as f:
         config: dict[str, Any] = yaml.safe_load(f) or {}
 
-    if OVERRIDE_CONFIG_PATH.exists():
+    if OVERRIDE_CONFIG_PATH.is_file():
         with open(OVERRIDE_CONFIG_PATH) as f:
             override: dict[str, Any] = yaml.safe_load(f) or {}
         _deep_merge(config, override)

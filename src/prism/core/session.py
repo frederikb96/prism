@@ -27,6 +27,8 @@ class Session:
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     process: CancellableProcess | None = None
     is_active: bool = True
+    children: set[str] = field(default_factory=set)
+    parent_id: str | None = None
 
     def mark_complete(self) -> None:
         """Mark session as no longer active."""
@@ -50,6 +52,7 @@ class SessionRegistry:
         self,
         session_id: str,
         process: CancellableProcess | None = None,
+        parent_session_id: str | None = None,
     ) -> Session:
         """
         Register a new session.
@@ -57,12 +60,20 @@ class SessionRegistry:
         Args:
             session_id: Unique session identifier
             process: Optional process associated with session
+            parent_session_id: Optional parent session to link to
 
         Returns:
             The registered Session object
         """
         async with self._lock:
             session = Session(session_id=session_id, process=process)
+
+            if parent_session_id is not None:
+                parent = self._sessions.get(parent_session_id)
+                if parent is not None:
+                    parent.children.add(session_id)
+                    session.parent_id = parent_session_id
+
             self._sessions[session_id] = session
             return session
 
@@ -83,6 +94,8 @@ class SessionRegistry:
         """
         Remove a session from the registry.
 
+        Also removes the session from its parent's children set if linked.
+
         Args:
             session_id: Session to remove
 
@@ -93,11 +106,16 @@ class SessionRegistry:
             session = self._sessions.pop(session_id, None)
             if session:
                 session.mark_complete()
+                if session.parent_id and session.parent_id in self._sessions:
+                    self._sessions[session.parent_id].children.discard(session_id)
             return session
 
     async def cancel(self, session_id: str) -> bool:
         """
         Cancel a session's process if running.
+
+        If the session has no process but has children, cancels all child
+        processes in parallel instead.
 
         Args:
             session_id: Session to cancel
@@ -105,16 +123,35 @@ class SessionRegistry:
         Returns:
             True if session was found and cancelled, False otherwise
         """
+        # Collect process(es) to cancel under lock
         async with self._lock:
             session = self._sessions.get(session_id)
-            if not (session and session.is_active and session.process):
+            if not session or not session.is_active:
                 return False
-            process = session.process
+
+            # Direct process on this session
+            if session.process:
+                to_cancel = [(session_id, session.process)]
+            elif session.children:
+                # Gather child processes
+                to_cancel = []
+                for cid in list(session.children):
+                    child = self._sessions.get(cid)
+                    if child and child.is_active and child.process:
+                        to_cancel.append((cid, child.process))
+                if not to_cancel:
+                    return False
+            else:
+                return False
 
         # Cancel outside lock to avoid blocking other operations
-        await process.cancel()
+        await asyncio.gather(*[proc.cancel() for _, proc in to_cancel])
 
+        # Mark complete under lock
         async with self._lock:
+            for sid, _ in to_cancel:
+                if sid in self._sessions:
+                    self._sessions[sid].mark_complete()
             if session_id in self._sessions:
                 self._sessions[session_id].mark_complete()
         return True
@@ -134,9 +171,8 @@ class SessionRegistry:
                 if s.is_active and s.process
             ]
 
-        # Cancel outside lock
-        for _, process in to_cancel:
-            await process.cancel()
+        # Cancel all processes in parallel
+        await asyncio.gather(*[process.cancel() for _, process in to_cancel])
 
         # Mark complete under lock
         async with self._lock:
