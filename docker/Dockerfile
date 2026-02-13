@@ -24,14 +24,13 @@ RUN npm install -g @google/gemini-cli@0.28.1
 # Create non-root user for podman rootless compatibility
 RUN useradd -m -u 1000 appuser
 
-# Install Claude CLI via official installer (as appuser, installs to ~/.claude/local/)
+# Install Claude CLI (binary goes to ~/.local/share/claude/, symlink at ~/.local/bin/claude)
 USER appuser
 # renovate: datasource=npm depName=@anthropic-ai/claude-code
 RUN curl -fsSL https://claude.ai/install.sh | bash -s 2.1.37
 USER root
 
-# Add Claude CLI to PATH (official installer puts it in ~/.local/bin and ~/.claude/local/bin)
-ENV PATH="/home/appuser/.local/bin:/home/appuser/.claude/local/bin:${PATH}"
+ENV PATH="/home/appuser/.local/bin:${PATH}"
 
 # Set working directory
 WORKDIR /app
@@ -51,11 +50,9 @@ RUN mkdir -p src/prism && touch src/prism/__init__.py
 # Install all dependencies (cached in image layer)
 RUN uv pip install --system --no-cache-dir -e ".[dev]"
 
-# Create XDG directories (as root, will be owned by appuser via chown)
-RUN mkdir -p /home/appuser/.config/prism \
-    /home/appuser/.local/share/prism \
-    /home/appuser/.cache/prism \
-    && chown -R appuser:appuser /home/appuser/.config /home/appuser/.local /home/appuser/.cache
+# Create mount target directories
+RUN mkdir -p /home/appuser/.config/prism /home/appuser/.claude \
+    && chown appuser:appuser /home/appuser/.config/prism /home/appuser/.claude
 
 # gosu already installed in base stage
 
@@ -83,11 +80,9 @@ COPY alembic/ ./alembic/
 RUN uv pip install --system --no-cache-dir . \
     && chmod +x /app/hooks/*.py
 
-# Create XDG directories
-RUN mkdir -p /home/appuser/.config/prism \
-    /home/appuser/.local/share/prism \
-    /home/appuser/.cache/prism \
-    && chown -R appuser:appuser /home/appuser/.config /home/appuser/.local /home/appuser/.cache
+# Create mount target directories
+RUN mkdir -p /home/appuser/.config/prism /home/appuser/.claude \
+    && chown appuser:appuser /home/appuser/.config/prism /home/appuser/.claude
 
 # Entrypoint runs migrations then starts server
 COPY docker/entrypoint-prod.sh /entrypoint.sh

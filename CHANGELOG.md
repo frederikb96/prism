@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Container volumes simplified: only persist PostgreSQL data and Claude CLI sessions (`~/.claude`)
+- Removed unused `~/.local/share/prism` and `~/.cache/prism` container mounts
 - MCP transport migrated from SSE to Streamable HTTP (`streamable-http`)
 - Healthchecks standardized to TCP checks (transport-agnostic)
 - E2E tests updated to use Streamable HTTP client endpoint

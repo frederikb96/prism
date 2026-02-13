@@ -159,11 +159,9 @@ class ContainerManager:
         )
 
     def clean_volumes(self) -> None:
-        """Remove and recreate temp data directories."""
-        for path in ("/tmp/prism-data", "/tmp/prism-cache", "/tmp/prism-postgres"):
+        """Remove temp data directories (podman recreates on start)."""
+        for path in ("/tmp/prism-claude", "/tmp/prism-postgres"):
             subprocess.run(["rm", "-rf", path], capture_output=True, check=False)
-        for path in ("/tmp/prism-data", "/tmp/prism-cache"):
-            subprocess.run(["mkdir", "-p", path], capture_output=True, check=False)
 
     def up(self) -> bool:
         """Start containers."""

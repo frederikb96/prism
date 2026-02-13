@@ -47,7 +47,7 @@ config/local.yaml
 # symlink
 .config-local
 
-# Database files (use ~/.local/share/prism/ instead)
+# Database files
 *.db
 *.sqlite
 

@@ -1,5 +1,5 @@
 # Prism Production Docker Compose
-# Uses bind mounts to ~/.local/share for XDG compliance and backup compatibility
+# Persists: PostgreSQL data + Claude CLI sessions under ~/.local/share/prism/
 
 services:
   prism:
@@ -13,9 +13,7 @@ services:
     ports:
       - "8765:8765"
     volumes:
-      # XDG-compliant bind mounts for data persistence
-      - ~/.local/share/prism:/home/appuser/.local/share/prism:z
-      - ~/.cache/prism:/home/appuser/.cache/prism:z
+      - ~/.local/share/prism/claude:/home/appuser/.claude:z
       - ~/.config/prism/prism.yaml:/home/appuser/.config/prism/prism.yaml:ro,z
     environment:
       - PRISM_SERVER_LOG_LEVEL=INFO

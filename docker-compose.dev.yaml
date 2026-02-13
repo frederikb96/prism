@@ -35,8 +35,7 @@ services:
       - "8766:8765"
     volumes:
       - .:/app:z
-      - /tmp/prism-data:/home/appuser/.local/share/prism:z
-      - /tmp/prism-cache:/home/appuser/.cache/prism:z
+      - /tmp/prism-claude:/home/appuser/.claude:z
       - ~/.config/prism/prism.yaml:/home/appuser/.config/prism/prism.yaml:ro,z
     env_file:
       - ~/.config/prism/.env

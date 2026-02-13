@@ -38,7 +38,7 @@ All 4 worker types (claude_search, tavily_search, perplexity_search, gemini_sear
 podman compose -f docker-compose.dev.yaml up -d
 
 # Data lives in /tmp for easy cleanup:
-# /tmp/prism-postgres, /tmp/prism-data, /tmp/prism-cache
+# /tmp/prism-postgres, /tmp/prism-claude
 
 # View logs
 podman logs prism-dev
@@ -54,7 +54,7 @@ podman compose -f docker-compose.dev.yaml down
 openssl rand -base64 32 > ~/.config/prism/postgres_password
 chmod 600 ~/.config/prism/postgres_password
 
-# Start (uses XDG paths: ~/.local/share/prism, ~/.cache/prism)
+# Data: ~/.local/share/prism/postgres, ~/.local/share/prism/claude
 podman compose up -d
 ```
 
