@@ -288,6 +288,7 @@ class TestLogWorkerCompletion:
         with caplog.at_level(logging.INFO, logger="prism.core.logging"):
             log_worker_completion(
                 worker_type="researcher",
+                agent_key="researcher_1",
                 success=True,
                 wall_time_s=15.234,
                 model="sonnet",
@@ -311,6 +312,7 @@ class TestLogWorkerCompletion:
         with caplog.at_level(logging.INFO, logger="prism.core.logging"):
             log_worker_completion(
                 worker_type="tavily",
+                agent_key="tavily_1",
                 success=True,
                 wall_time_s=12.34567,
                 model="sonnet",
@@ -325,6 +327,7 @@ class TestLogWorkerCompletion:
         with caplog.at_level(logging.INFO, logger="prism.core.logging"):
             log_worker_completion(
                 worker_type="perplexity",
+                agent_key="perplexity_1",
                 success=False,
                 wall_time_s=2.0,
                 model="sonnet",

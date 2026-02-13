@@ -14,7 +14,14 @@ This module provides the foundational components for CLI execution:
 from prism.core.executor import ClaudeExecutor
 from prism.core.gemini import GeminiExecutor
 from prism.core.hooks import build_claude_hooks, build_gemini_settings_file, build_time_env_vars
-from prism.core.logging import log_worker_completion, parse_hook_log, setup_logging
+from prism.core.logging import (
+    log_manager_phase,
+    log_prompt,
+    log_worker_completion,
+    parse_hook_log,
+    parse_hook_log_detailed,
+    setup_logging,
+)
 from prism.core.process import CancellableProcess, ProcessResult
 from prism.core.response import ExecutionRequest, ExecutionResult
 from prism.core.retry import RetryExecutor, build_validation_retry_prompt
@@ -29,8 +36,11 @@ __all__ = [
     "build_gemini_settings_file",
     "build_time_env_vars",
     # Logging
+    "log_manager_phase",
+    "log_prompt",
     "log_worker_completion",
     "parse_hook_log",
+    "parse_hook_log_detailed",
     "setup_logging",
     # Request/Response
     "ExecutionRequest",

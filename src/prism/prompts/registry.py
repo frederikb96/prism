@@ -230,7 +230,9 @@ class PromptRegistry:
         if template is None:
             raise RuntimeError("User prompt template not found: user.md")
 
-        return template.format(query=query, timeout_seconds=timeout_seconds)
+        return template.replace(
+            "{query}", query
+        ).replace("{timeout_seconds}", str(timeout_seconds))
 
     def list_templates(self, pattern: str = "**/*.md") -> list[str]:
         """

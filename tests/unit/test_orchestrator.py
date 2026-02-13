@@ -93,7 +93,7 @@ class TestWorkerDispatcher:
     @pytest.mark.asyncio
     async def test_dispatch_empty_plan(self) -> None:
         dispatcher = self._make_dispatcher()
-        plan = TaskPlan(tasks=[], reasoning="empty")
+        plan = TaskPlan(tasks=[], )
 
         results = await dispatcher.dispatch(
             task_plan=plan,
@@ -120,7 +120,6 @@ class TestWorkerDispatcher:
         ) as mock_factory:
             plan = TaskPlan(
                 tasks=[Task(query="test", agent_type="claude_search")],
-                reasoning="plan",
             )
 
             results = await dispatcher.dispatch(
@@ -157,7 +156,6 @@ class TestWorkerDispatcher:
         ) as mock_factory:
             plan = TaskPlan(
                 tasks=[Task(query="q", agent_type="gemini_search")],
-                reasoning="r",
             )
 
             await dispatcher.dispatch(
@@ -189,7 +187,6 @@ class TestWorkerDispatcher:
                     Task(query="q2", agent_type="tavily_search"),
                     Task(query="q3", agent_type="perplexity_search"),
                 ],
-                reasoning="multi-task",
             )
 
             results = await dispatcher.dispatch(
@@ -216,7 +213,6 @@ class TestWorkerDispatcher:
         ):
             plan = TaskPlan(
                 tasks=[Task(query="q", agent_type="claude_search")],
-                reasoning="plan",
             )
 
             results = await dispatcher.dispatch(
@@ -231,8 +227,8 @@ class TestWorkerDispatcher:
             assert "boom" in (results[0].error or "")
 
     @pytest.mark.asyncio
-    async def test_dispatch_includes_context_in_prompt(self) -> None:
-        """Task context is prepended to query."""
+    async def test_dispatch_tracks_wall_time(self) -> None:
+        """Dispatcher adds wall_time_s and agent_key to result metadata."""
         dispatcher = self._make_dispatcher()
 
         mock_worker = MagicMock()
@@ -246,21 +242,20 @@ class TestWorkerDispatcher:
         ):
             plan = TaskPlan(
                 tasks=[
-                    Task(query="main query", agent_type="claude_search", context="extra context"),
+                    Task(query="q", agent_type="claude_search", key="claude_search_1"),
                 ],
-                reasoning="plan",
             )
 
-            await dispatcher.dispatch(
+            results = await dispatcher.dispatch(
                 task_plan=plan,
                 worker_timeout=60,
                 visible_timeout=30,
                 level=1,
             )
 
-            called_prompt = mock_worker.execute.call_args[0][0]
-            assert "extra context" in called_prompt
-            assert "main query" in called_prompt
+            assert len(results) == 1
+            assert results[0].metadata.get("agent_key") == "claude_search_1"
+            assert "wall_time_s" in results[0].metadata
 
 
 # ---------------------------------------------------------------------------
@@ -510,11 +505,10 @@ class TestSearchFlowLevel1_3:
         """Create a successful manager plan result in keyed-dict format."""
         import json
         keyed_plan = {
-            "reasoning": "test plan",
-            "claude_search_1": {"query": "q1"},
-            "gemini_search_1": {"query": "q2"},
-            "tavily_search_1": {"query": "q3"},
-            "perplexity_search_1": {"query": "q4"},
+            "claude_search_1": "q1",
+            "gemini_search_1": "q2",
+            "tavily_search_1": "q3",
+            "perplexity_search_1": "q4",
         }
         return ExecutionResult.from_success(
             json.dumps({"type": "result", "structured_output": keyed_plan}),
@@ -620,15 +614,14 @@ class TestSearchFlowLevel1_3:
         # L3 allocation: claude=3, gemini=2, tavily=2, perplexity=1
         import json
         l3_plan = {
-            "reasoning": "l3 plan",
-            "claude_search_1": {"query": "q1"},
-            "claude_search_2": {"query": "q2"},
-            "claude_search_3": {"query": "q3"},
-            "gemini_search_1": {"query": "q4"},
-            "gemini_search_2": {"query": "q5"},
-            "tavily_search_1": {"query": "q6"},
-            "tavily_search_2": {"query": "q7"},
-            "perplexity_search_1": {"query": "q8"},
+            "claude_search_1": "q1",
+            "claude_search_2": "q2",
+            "claude_search_3": "q3",
+            "gemini_search_1": "q4",
+            "gemini_search_2": "q5",
+            "tavily_search_1": "q6",
+            "tavily_search_2": "q7",
+            "perplexity_search_1": "q8",
         }
         mock_executor.add_result(
             ExecutionResult.from_success(

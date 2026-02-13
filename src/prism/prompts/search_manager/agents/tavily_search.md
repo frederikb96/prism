@@ -1,0 +1,1 @@
+Real original content extraction focus. Multi-source original info extraction via extract tool after finding relevant URLs. Best for: multi-source validation, consensus finding, getting complete original content rather than summaries.

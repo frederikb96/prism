@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 from prism.config import get_config
+from prism.core.logging import log_manager_phase, log_worker_completion, parse_hook_log_detailed
 from prism.database import SessionStatus
 from prism.workers import ManagerAgent
 from prism.workers.factory import VALID_AGENT_TYPES, create_worker
@@ -138,7 +139,7 @@ class SearchFlow:
 
         logger.info(
             "Starting search",
-            extra={"query_length": len(query), "level": level, "session_id": session_id},
+            extra={"query_length": len(query), "search_level": level, "session_id": session_id},
         )
 
         await self._session_repository.create(
@@ -277,6 +278,7 @@ class SearchFlow:
                 )
             )
 
+        worker_starts = [time.monotonic()] * len(workers)
         results = await asyncio.gather(
             *[w.execute(query, timeout_seconds=timeout) for w in workers],
             return_exceptions=True,
@@ -287,9 +289,35 @@ class SearchFlow:
 
         for i, result in enumerate(results):
             provider_name = resolved[i]
+            wall_time = round(time.monotonic() - worker_starts[i], 1)
+
             if isinstance(result, BaseException):
                 errors.append(f"{provider_name}: {result}")
-            elif result.success:
+                continue
+
+            # Parse hook log and emit worker completion
+            worker = workers[i]
+            hook_data = None
+            log_path = getattr(worker, "hook_log_path", None)
+            w_start = getattr(worker, "worker_start_time", None)
+            if log_path and w_start:
+                hook_data = parse_hook_log_detailed(log_path, w_start)
+
+            model = getattr(worker, "worker_model", "unknown")
+            content_len = len(result.content) if isinstance(result.content, str) else 0
+            log_worker_completion(
+                worker_type=provider_name,
+                agent_key=f"{provider_name}_1",
+                success=result.success,
+                wall_time_s=wall_time,
+                model=model,
+                response_length=content_len,
+                tool_calls=hook_data["tool_calls"] if hook_data else 0,
+                hook_blocks=hook_data["hook_blocks"] if hook_data else 0,
+                tool_call_details=hook_data["calls"] if hook_data else None,
+            )
+
+            if result.success:
                 content = result.content if isinstance(result.content, str) else str(result.content)
                 successful_sections.append((provider_name, content))
             else:
@@ -355,11 +383,21 @@ class SearchFlow:
             executor=self._retry_executor,
             model=manager_model_cfg.model,
             agent_allocation=level_config.agent_allocation,
+            level=level,
         )
 
-        logger.debug("Manager creating task plan", extra={"level": level})
+        logger.debug("Manager creating task plan", extra={"search_level": level})
 
+        plan_start = time.monotonic()
         plan_result = await manager.plan(query, timeout_seconds=None)
+        plan_wall_time = round(time.monotonic() - plan_start, 2)
+
+        log_manager_phase(
+            phase="planning",
+            level=level,
+            wall_time_s=plan_wall_time,
+            session_id=manager.session_id,
+        )
 
         if not plan_result.success:
             return SearchResult(
@@ -371,10 +409,14 @@ class SearchFlow:
                 error=f"Manager planning failed: {plan_result.error}",
             )
 
-        from prism.workers.manager import TaskPlan
+        from prism.workers.manager import Task, TaskPlan
 
-        if isinstance(plan_result.content, dict):
-            task_plan = TaskPlan.from_dict(plan_result.content)
+        if isinstance(plan_result.content, dict) and "tasks" in plan_result.content:
+            tasks = [
+                Task(query=t["query"], agent_type=t["agent_type"], key=t.get("key", ""))
+                for t in plan_result.content["tasks"]
+            ]
+            task_plan = TaskPlan(tasks=tasks)
         else:
             return SearchResult(
                 success=False,
@@ -397,7 +439,7 @@ class SearchFlow:
 
         logger.info(
             "Task plan created",
-            extra={"task_count": len(task_plan.tasks), "reasoning": task_plan.reasoning[:100]},
+            extra={"task_count": len(task_plan.tasks)},
         )
 
         worker_results = await self._dispatcher.dispatch(
@@ -419,10 +461,18 @@ class SearchFlow:
                 metadata={"task_count": len(task_plan.tasks)},
             )
 
+        synth_start = time.monotonic()
         synthesis_result = await manager.synthesize(
-            query=query,
             results=worker_results,
             timeout_seconds=None,
+        )
+        synth_wall_time = round(time.monotonic() - synth_start, 2)
+
+        log_manager_phase(
+            phase="synthesis",
+            level=level,
+            wall_time_s=synth_wall_time,
+            session_id=manager.session_id,
         )
 
         if not synthesis_result.success:
@@ -455,7 +505,6 @@ class SearchFlow:
             metadata={
                 "task_count": len(task_plan.tasks),
                 "successful_workers": successful_count,
-                "reasoning": task_plan.reasoning,
             },
         )
 
@@ -484,11 +533,11 @@ class SearchFlow:
             extra={"claude_session_id": claude_session_id, "session_id": session_id},
         )
 
-        # Minimal allocation -- not used for chat follow-ups, but required by ManagerAgent
         manager = ManagerAgent(
             executor=self._retry_executor,
             model="sonnet",
             agent_allocation={},
+            level=0,
             session_id=claude_session_id,
         )
 

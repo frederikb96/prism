@@ -16,11 +16,11 @@ search:
 
 levels:
   0:
-    worker_timeout_seconds: 70
+    worker_timeout_seconds: 80
     worker_visible_timeout: 30
   1:
-    worker_timeout_seconds: 130
-    worker_visible_timeout: 70
+    worker_timeout_seconds: 140
+    worker_visible_timeout: 50
     agent_allocation:
       claude_search: 1
       gemini_search: 1
@@ -28,7 +28,7 @@ levels:
       perplexity_search: 1
   2:
     worker_timeout_seconds: 230
-    worker_visible_timeout: 150
+    worker_visible_timeout: 120
     agent_allocation:
       claude_search: 2
       gemini_search: 2

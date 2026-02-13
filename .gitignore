@@ -61,5 +61,9 @@ Thumbs.db
 # Archive (V1 code backup)
 .archive/
 
+# E2E test results (generated, keep folder via .gitkeep)
+tests/e2e/results/*
+!tests/e2e/results/.gitkeep
+
 # Claude
 .claude/

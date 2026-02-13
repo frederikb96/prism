@@ -4,7 +4,7 @@ Gemini CLI executor.
 THE single place where `gemini -p` is invoked. All Gemini CLI calls
 must go through GeminiExecutor.execute() to maintain DRY principle.
 
-Includes built-in transient retry (no outer-tier schema validation retry).
+Includes transient retry for crashes (no retry on timeout, no schema validation).
 """
 
 from __future__ import annotations
@@ -139,9 +139,8 @@ class GeminiExecutor:
             if result.is_cancelled:
                 return result
 
-            if result.is_timeout and attempt < retry_cfg.max_transient_retries:
-                logger.warning("Gemini execution timed out, will retry")
-                continue
+            if result.is_timeout or result.is_cancelled:
+                return result
 
             if not result.success and result.is_transient_error():
                 if attempt < retry_cfg.max_transient_retries:

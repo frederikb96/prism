@@ -1,0 +1,1 @@
+Thorough structured researcher. Can follow links and extract full page content (WebFetch). Strong multi-step reasoning, connects concepts across sources. Citation-aware. Best for: comprehensive research, following leads across pages, synthesis, technical depth.

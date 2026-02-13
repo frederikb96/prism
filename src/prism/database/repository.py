@@ -122,7 +122,7 @@ class SearchSessionRepository:
     async def update(
         self,
         session_id: uuid.UUID,
-        user_id: str | None = None,
+        user_id: str,
         *,
         status: SessionStatus | None = None,
         claude_session_id: str | None = None,
@@ -169,19 +169,14 @@ class SearchSessionRepository:
             return True
 
         async with self._db.session() as db_session:
-            where_clause = SearchSession.id == session_id
-            if user_id is not None:
-                stmt = (
-                    update(SearchSession)
-                    .where(where_clause, SearchSession.user_id == user_id)
-                    .values(**values)
+            stmt = (
+                update(SearchSession)
+                .where(
+                    SearchSession.id == session_id,
+                    SearchSession.user_id == user_id,
                 )
-            else:
-                stmt = (
-                    update(SearchSession)
-                    .where(where_clause)
-                    .values(**values)
-                )
+                .values(**values)
+            )
             result_proxy = await db_session.execute(stmt)
             return bool(result_proxy.rowcount > 0)  # type: ignore[attr-defined]
 

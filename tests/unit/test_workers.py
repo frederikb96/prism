@@ -580,44 +580,33 @@ class TestManagerAgent:
         task = Task(query="test")
         assert task.agent_type == "claude_search"
 
-    def test_task_from_dict_defaults(self) -> None:
-        task = Task.from_dict({"query": "test"})
-        assert task.agent_type == "claude_search"
-
-    def test_task_plan_from_dict(self) -> None:
+    def test_task_plan_from_keyed_dict_new_format(self) -> None:
         data = {
-            "reasoning": "test plan",
-            "tasks": [
-                {"query": "q1", "agent_type": "claude_search"},
-                {"query": "q2", "agent_type": "gemini_search"},
-            ],
-        }
-        plan = TaskPlan.from_dict(data)
-        assert len(plan.tasks) == 2
-        assert plan.tasks[0].agent_type == "claude_search"
-        assert plan.tasks[1].agent_type == "gemini_search"
-
-    def test_task_plan_from_keyed_dict(self) -> None:
-        data = {
-            "reasoning": "plan reason",
-            "claude_search_1": {"query": "q1", "context": "ctx1"},
-            "gemini_search_1": {"query": "q2"},
-            "tavily_search_1": {"query": "q3"},
+            "claude_search_1": "search query for claude",
+            "gemini_search_1": "search query for gemini",
+            "tavily_search_1": "search query for tavily",
         }
         plan = TaskPlan.from_keyed_dict(data)
-        assert plan.reasoning == "plan reason"
         assert len(plan.tasks) == 3
         types = {t.agent_type for t in plan.tasks}
         assert types == {"claude_search", "gemini_search", "tavily_search"}
-        # Find the claude task to check context
         claude_task = [t for t in plan.tasks if t.agent_type == "claude_search"][0]
-        assert claude_task.context == "ctx1"
+        assert claude_task.query == "search query for claude"
+        assert claude_task.key == "claude_search_1"
 
-    def test_task_plan_from_keyed_dict_skips_non_dict_values(self) -> None:
+    def test_task_plan_from_keyed_dict_legacy_format(self) -> None:
         data = {
-            "reasoning": "test",
             "claude_search_1": {"query": "q1"},
-            "extra_string": "not a task",
+            "gemini_search_1": {"query": "q2"},
+        }
+        plan = TaskPlan.from_keyed_dict(data)
+        assert len(plan.tasks) == 2
+        assert plan.tasks[0].query in ("q1", "q2")
+
+    def test_task_plan_from_keyed_dict_skips_non_task_keys(self) -> None:
+        data = {
+            "claude_search_1": "q1",
+            "not_a_task": "ignored",
         }
         plan = TaskPlan.from_keyed_dict(data)
         assert len(plan.tasks) == 1
@@ -625,13 +614,13 @@ class TestManagerAgent:
     def test_build_task_schema_l1(self) -> None:
         schema = ManagerAgent._build_task_schema(_L1_ALLOCATION)
         assert schema["type"] == "object"
-        assert "reasoning" in schema["required"]
         assert "claude_search_1" in schema["required"]
         assert "gemini_search_1" in schema["required"]
         assert "tavily_search_1" in schema["required"]
         assert "perplexity_search_1" in schema["required"]
-        assert len(schema["required"]) == 5  # reasoning + 4 slots
+        assert len(schema["required"]) == 4
         assert schema["additionalProperties"] is False
+        assert schema["properties"]["claude_search_1"]["type"] == "string"
 
     def test_build_task_schema_l2(self) -> None:
         schema = ManagerAgent._build_task_schema(_L2_ALLOCATION)
@@ -641,7 +630,7 @@ class TestManagerAgent:
         assert "gemini_search_2" in schema["required"]
         assert "tavily_search_1" in schema["required"]
         assert "perplexity_search_1" in schema["required"]
-        assert len(schema["required"]) == 7  # reasoning + 6 slots
+        assert len(schema["required"]) == 6
 
     def test_build_task_schema_excludes_zero_count(self) -> None:
         alloc = {"claude_search": 2, "gemini_search": 0, "tavily_search": 1}
@@ -651,8 +640,11 @@ class TestManagerAgent:
         assert "claude_search_2" in schema["required"]
         assert "tavily_search_1" in schema["required"]
 
-    def test_render_agent_section(self) -> None:
-        section = ManagerAgent._render_agent_section(_L1_ALLOCATION)
+    def test_render_agent_section(self, mock_executor: MockExecutor) -> None:
+        manager = ManagerAgent(
+            executor=mock_executor, model="s", agent_allocation=_L1_ALLOCATION, level=1,
+        )
+        section = manager._render_agent_section()
         assert "claude_search" in section
         assert "gemini_search" in section
         assert "tavily_search" in section
@@ -660,26 +652,30 @@ class TestManagerAgent:
         assert "claude_search_1" in section
         assert "1 slot:" in section
 
-    def test_render_agent_section_l2_plural(self) -> None:
-        section = ManagerAgent._render_agent_section(_L2_ALLOCATION)
+    def test_render_agent_section_l2_plural(self, mock_executor: MockExecutor) -> None:
+        manager = ManagerAgent(
+            executor=mock_executor, model="s", agent_allocation=_L2_ALLOCATION, level=2,
+        )
+        section = manager._render_agent_section()
         assert "2 slots:" in section
         assert "claude_search_1, claude_search_2" in section
 
-    def test_render_agent_section_excludes_zero(self) -> None:
+    def test_render_agent_section_excludes_zero(self, mock_executor: MockExecutor) -> None:
         alloc = {"claude_search": 1, "gemini_search": 0}
-        section = ManagerAgent._render_agent_section(alloc)
+        manager = ManagerAgent(
+            executor=mock_executor, model="s", agent_allocation=alloc, level=1,
+        )
+        section = manager._render_agent_section()
         assert "claude_search" in section
         assert "gemini_search" not in section
 
-    def test_manager_system_prompt_describes_workers(self) -> None:
-        """Manager system prompt references all 4 worker types."""
+    def test_manager_system_prompt_is_lean(self) -> None:
+        """Manager system prompt is lean -- no agent types, no strategy."""
         registry = PromptRegistry()
         content = registry.get_content("search_manager/system")
         assert content is not None
-        assert "claude_search" in content
-        assert "tavily_search" in content
-        assert "perplexity_search" in content
-        assert "gemini_search" in content
+        assert "search session manager" in content
+        assert "claude_search" not in content
 
     def test_response_schema_loaded(self) -> None:
         registry = PromptRegistry()
@@ -697,14 +693,14 @@ class TestManagerAgent:
             executor=retry_executor,
             model="sonnet",
             agent_allocation=_L1_ALLOCATION,
+            level=1,
         )
 
         keyed_plan = {
-            "reasoning": "test",
-            "claude_search_1": {"query": "q1"},
-            "gemini_search_1": {"query": "q2"},
-            "tavily_search_1": {"query": "q3"},
-            "perplexity_search_1": {"query": "q4"},
+            "claude_search_1": "q1",
+            "gemini_search_1": "q2",
+            "tavily_search_1": "q3",
+            "perplexity_search_1": "q4",
         }
         mock_executor.add_result(
             ExecutionResult.from_success(
@@ -728,9 +724,10 @@ class TestManagerAgent:
             executor=retry_executor,
             model="sonnet",
             agent_allocation=alloc,
+            level=1,
         )
 
-        keyed_plan = {"reasoning": "r", "claude_search_1": {"query": "q"}}
+        keyed_plan = {"claude_search_1": "q"}
         mock_executor.add_result(
             ExecutionResult.from_success(
                 json.dumps({"type": "result", "structured_output": keyed_plan}),
@@ -751,6 +748,7 @@ class TestManagerAgent:
             executor=retry_executor,
             model="sonnet",
             agent_allocation=_L1_ALLOCATION,
+            level=1,
         )
 
         mock_executor.add_result(ExecutionResult.from_error("plan broke"))
@@ -766,6 +764,7 @@ class TestManagerAgent:
             executor=retry_executor,
             model="sonnet",
             agent_allocation=_L1_ALLOCATION,
+            level=1,
             session_id="mgr-sess",
         )
 
@@ -781,11 +780,11 @@ class TestManagerAgent:
 
         from prism.workers.base import AgentResult
         results = [
-            AgentResult.from_success(content="data1", agent_type="claude_search"),
-            AgentResult.from_success(content="data2", agent_type="gemini_search"),
+            AgentResult.from_success(content="data1", agent_key="claude_search_1"),
+            AgentResult.from_success(content="data2", agent_key="gemini_search_1"),
         ]
 
-        result = await manager.synthesize("original query", results)
+        result = await manager.synthesize(results)
 
         assert result.success is True
         assert result.content == "synthesized answer"
@@ -801,10 +800,11 @@ class TestManagerAgent:
             executor=retry_executor,
             model="sonnet",
             agent_allocation=_L1_ALLOCATION,
+            level=1,
         )
 
         from prism.workers.base import AgentResult
-        result = await manager.synthesize("query", [AgentResult.from_success(content="d")])
+        result = await manager.synthesize([AgentResult.from_success(content="d")])
         assert result.success is False
         assert "No session_id" in (result.error or "")
 
@@ -815,6 +815,7 @@ class TestManagerAgent:
             executor=retry_executor,
             model="sonnet",
             agent_allocation=_L1_ALLOCATION,
+            level=1,
             session_id="existing-sess",
         )
 
@@ -842,6 +843,7 @@ class TestManagerAgent:
             executor=retry_executor,
             model="sonnet",
             agent_allocation=_L1_ALLOCATION,
+            level=1,
         )
 
         result = await manager.follow_up_chat("question")
@@ -856,10 +858,11 @@ class TestManagerAgent:
             executor=retry_executor,
             model="sonnet",
             agent_allocation=alloc,
+            level=1,
             session_id="existing-sess",
         )
 
-        keyed_plan = {"reasoning": "follow-up", "claude_search_1": {"query": "fq1"}}
+        keyed_plan = {"claude_search_1": "fq1"}
         mock_executor.add_result(
             ExecutionResult.from_success(
                 json.dumps({"type": "result", "structured_output": keyed_plan}),
@@ -881,6 +884,7 @@ class TestManagerAgent:
             executor=mock_executor,
             model="opus",
             agent_allocation=_L1_ALLOCATION,
+            level=1,
         )
         assert manager._system_prompt is not None
         assert "search session manager" in manager._system_prompt

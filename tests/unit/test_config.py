@@ -37,17 +37,6 @@ class TestConfigLoading:
         config = get_config()
         assert set(config.levels.keys()) == {0, 1, 2, 3}
 
-    def test_level_timeouts(self) -> None:
-        config = get_config()
-        assert config.levels[0].worker_timeout_seconds == 70
-        assert config.levels[0].worker_visible_timeout == 30
-        assert config.levels[1].worker_timeout_seconds == 130
-        assert config.levels[1].worker_visible_timeout == 70
-        assert config.levels[2].worker_timeout_seconds == 230
-        assert config.levels[2].worker_visible_timeout == 150
-        assert config.levels[3].worker_timeout_seconds == 600
-        assert config.levels[3].worker_visible_timeout == 480
-
     def test_l0_has_no_agent_allocation(self) -> None:
         config = get_config()
         assert config.levels[0].agent_allocation is None

@@ -1,15 +1,24 @@
 ## Search Query
+
 {query}
 
 ## Available Agents
+
 {agent_section}
 
-Create a search plan using every agent slot listed above. Each agent must receive a focused search query.
+## Search Strategy
 
-**Strategy guidance:**
-- Create overlapping queries across agents for cross-referencing and reliability assessment
-- Do NOT assign entirely unique tasks to each agent -- overlap builds confidence
-- Leverage each agent's strengths (described in agent section) when crafting queries
-- Provide brief context for each query explaining its role in the overall search
+- **Cross-referencing**: Create overlapping queries across agents -- reliability comes from independent verification, not trusting any single source
+- **Doubt everything**: Multiple agent layers can produce false information -- build reliability from cross-referencing rather than assuming correctness
+- **Specific queries**: Vague queries produce vague results -- each agent slot must have a clear, focused purpose
+- **Self-contained prompts**: Each agent query must be fully self-contained with all necessary context -- agents cannot see each other or your planning
 
-Output valid JSON matching the required schema.
+{level_guidance}
+
+## Required Output Format
+
+Output a JSON object with one key per agent slot. Each value is the complete search prompt for that agent.
+
+```json
+{schema_example}
+```

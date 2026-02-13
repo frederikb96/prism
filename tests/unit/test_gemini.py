@@ -178,28 +178,26 @@ class TestExecute:
         assert "API error" in result.error_message
 
     @pytest.mark.asyncio
-    async def test_timeout_triggers_retry(self, fast_retry) -> None:
-        """Timeout triggers transient retry."""
+    async def test_timeout_not_retried(self, fast_retry) -> None:
+        """Timeout returns immediately without retry."""
         executor = GeminiExecutor(retry_config=fast_retry)
         request = ExecutionRequest(
             prompt="Test", model="gemini-2.5-flash", timeout_seconds=1,
         )
 
-        success_output = json.dumps({"response": "ok"})
         call_count = 0
 
         async def mock_execute_once(req, sid):
             nonlocal call_count
             call_count += 1
-            if call_count == 1:
-                return ExecutionResult.from_timeout(1)
-            return ExecutionResult.from_success(output=success_output, session_id=sid)
+            return ExecutionResult.from_timeout(1)
 
         with patch.object(executor, "_execute_once", side_effect=mock_execute_once):
             result = await executor.execute(request)
 
-        assert result.success is True
-        assert call_count == 2
+        assert result.success is False
+        assert result.is_timeout is True
+        assert call_count == 1
 
     @pytest.mark.asyncio
     async def test_transient_error_retried(self, fast_retry) -> None:

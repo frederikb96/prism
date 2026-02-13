@@ -1,0 +1,1 @@
+Aggressive parallel searcher with Google grounding search. High quality, current results. Fast, handles large result sets. Best for: broad coverage, current events, parallel multi-angle search, rapid fact-gathering.

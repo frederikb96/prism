@@ -1,25 +1,25 @@
 """Test fixtures and query constants for E2E tests."""
 
-# Level 0: Default provider (claude_search via config)
-LEVEL_0_QUERY = "What are the latest Elastic agent features for fleet management?"
+# Test 1: L0 default provider (claude_search via config)
+L0_DEFAULT_QUERY = "What is the current price of Bitcoin in USD?"
 
-# Level 0 mix: All 4 providers in parallel
-LEVEL_0_MIX_QUERY = "What is the current state of WebAssembly support in major browsers?"
+# Test 2: L0 mix (all 4 providers in parallel)
+L0_MIX_QUERY = "Compare WebAuthn/passkeys vs TOTP for enterprise SSO deployments"
 
-# Level 0 gemini: Gemini search only
-LEVEL_0_GEMINI_QUERY = "What are the key differences between ARM and x86 architectures?"
-
-# Level 1: Quick search with parallel workers
-LEVEL_1_QUERY = "How do Elastic agents connect to Fleet server and what are best practices?"
-
-# Hook block: Query designed to trigger tool usage (which the time hook should block)
-HOOK_BLOCK_QUERY = (
-    "Search the web for the latest Python 3.13 release notes "
-    "and summarize the new features you find"
+# Test 3: L1 search (manager + parallel workers + synthesis)
+L1_QUERY = (
+    "Find the top 5 action movies released after 2020 that are under 2 hours long "
+    "and have an IMDb rating above 7. For each movie provide: title, year, exact "
+    "runtime, IMDb rating, and a one-line description."
 )
 
-# Resume/follow-up query (tests sequential L1 handling)
-RESUME_QUERY = (
-    "tell me about Fleet and how we can set in Fleet "
-    "the output of agents to tune the performance"
+# Test 4: Cancel (start L1 search, cancel after 5s)
+CANCEL_QUERY = "What is the current price of Bitcoin in USD?"
+
+# Test 5: Resume (follow-up chat on L1 session from test 3)
+RESUME_FOLLOW_UP = (
+    "Name only one movie from the previous search result which would be the underdog and why?"
 )
+
+# Ordered test list
+ALL_TESTS = ["l0_default", "l0_mix", "l1", "cancel", "resume"]

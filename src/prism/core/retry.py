@@ -54,7 +54,8 @@ class RetryExecutor:
     Executor with two-tier retry logic.
 
     Inner Loop (Transient Retries):
-    - Catches: TimeoutError, subprocess crash, connection issues
+    - Catches: subprocess crash, connection issues
+    - Timeouts and cancellations return immediately (no retry)
     - Exponential backoff: 1s, 2s, 4s (configurable)
     - Does NOT count against validation budget
     - Max 3 retries by default
@@ -183,13 +184,7 @@ class RetryExecutor:
                     request, session_id=session_id
                 )
 
-                if result.is_timeout:
-                    if attempt < self._config.max_transient_retries:
-                        logger.warning("Execution timed out, will retry")
-                        continue
-                    return result
-
-                if result.is_cancelled:
+                if result.is_timeout or result.is_cancelled:
                     return result
 
                 if not result.success and result.is_transient_error():

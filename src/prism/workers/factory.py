@@ -47,6 +47,9 @@ def create_worker(
     """
     Create a configured worker agent for the given type and level.
 
+    Sets hook_log_path, worker_start_time, and worker_model on the returned
+    agent for post-execution hook log parsing and completion logging.
+
     Args:
         agent_type: Worker type (claude_search, tavily_search, perplexity_search, gemini_search)
         claude_executor: RetryExecutor for Claude-based workers
@@ -68,40 +71,46 @@ def create_worker(
         )
 
     config = get_config()
+    start = time.time()
+    log_path = f"/tmp/prism-hook-{uuid.uuid4()}.log"
 
     if agent_type == "gemini_search":
         model_cfg = config.models.gemini_workers[level]
         env_vars = build_time_env_vars(
-            start_time=time.time(),
+            start_time=start,
             tool_timeout=visible_timeout,
             hook_format="gemini",
-            log_path=f"/tmp/prism-hook-{uuid.uuid4()}.log",
+            log_path=log_path,
         )
-        return GeminiSearchAgent(
+        worker: Agent = GeminiSearchAgent(
             executor=gemini_executor,
             model=model_cfg.model,
             timeout=timeout,
             visible_timeout=visible_timeout,
             env_vars=env_vars,
         )
+    else:
+        model_cfg = config.models.claude_workers[level]
+        hooks_config = build_claude_hooks()
+        env_vars = build_time_env_vars(
+            start_time=start,
+            tool_timeout=visible_timeout,
+            hook_format="claude",
+            log_path=log_path,
+        )
 
-    # All Claude-based workers
-    model_cfg = config.models.claude_workers[level]
-    hooks_config = build_claude_hooks()
-    env_vars = build_time_env_vars(
-        start_time=time.time(),
-        tool_timeout=visible_timeout,
-        hook_format="claude",
-        log_path=f"/tmp/prism-hook-{uuid.uuid4()}.log",
-    )
+        cls = _CLAUDE_AGENT_CLASSES[agent_type]
+        worker = cls(
+            executor=claude_executor,
+            model=model_cfg.model,
+            timeout=timeout,
+            visible_timeout=visible_timeout,
+            hooks_config=hooks_config,
+            env_vars=env_vars,
+            effort=model_cfg.effort,
+        )
 
-    cls = _CLAUDE_AGENT_CLASSES[agent_type]
-    return cls(
-        executor=claude_executor,
-        model=model_cfg.model,
-        timeout=timeout,
-        visible_timeout=visible_timeout,
-        hooks_config=hooks_config,
-        env_vars=env_vars,
-        effort=model_cfg.effort,
-    )
+    worker.hook_log_path = log_path  # type: ignore[attr-defined]
+    worker.worker_start_time = start  # type: ignore[attr-defined]
+    worker.worker_model = model_cfg.model  # type: ignore[attr-defined]
+    return worker

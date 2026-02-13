@@ -69,21 +69,22 @@ class TestRetryExecutorTransientRetries:
         assert len(mock_executor.calls) == 1
 
     @pytest.mark.asyncio
-    async def test_retry_on_timeout(
+    async def test_timeout_not_retried(
         self,
         mock_executor: MockExecutor,
         retry_config: RetryConfig,
         sample_request: ExecutionRequest,
     ) -> None:
-        """Timeout triggers transient retry."""
+        """Timeout returns immediately without retry."""
         mock_executor.add_result(ExecutionResult.from_timeout(30))
         mock_executor.add_result(ExecutionResult.from_success("done", "sess-1"))
 
         retry_executor = RetryExecutor(mock_executor, retry_config)
         result = await retry_executor.execute(sample_request)
 
-        assert result.success is True
-        assert len(mock_executor.calls) == 2
+        assert result.success is False
+        assert result.is_timeout is True
+        assert len(mock_executor.calls) == 1
 
     @pytest.mark.asyncio
     async def test_retry_on_transient_error(
@@ -113,13 +114,14 @@ class TestRetryExecutorTransientRetries:
     ) -> None:
         """Retries stop after max_transient_retries."""
         for _ in range(retry_config.max_transient_retries + 2):
-            mock_executor.add_result(ExecutionResult.from_timeout(30))
+            mock_executor.add_result(
+                ExecutionResult.from_error("connection refused", exit_code=1)
+            )
 
         retry_executor = RetryExecutor(mock_executor, retry_config)
         result = await retry_executor.execute(sample_request)
 
         assert result.success is False
-        assert result.is_timeout is True
         assert len(mock_executor.calls) == retry_config.max_transient_retries + 1
 
     @pytest.mark.asyncio
@@ -249,7 +251,9 @@ class TestRetryExecutorTwoTierInteraction:
         valid_json_output: str,
     ) -> None:
         """Transient retries don't count against validation budget."""
-        mock_executor.add_result(ExecutionResult.from_timeout(30))
+        mock_executor.add_result(
+            ExecutionResult.from_error("connection refused", exit_code=1)
+        )
         mock_executor.add_result(
             ExecutionResult.from_success(invalid_json_output, "sess-1")
         )

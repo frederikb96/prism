@@ -94,7 +94,12 @@ def main() -> int:
 
     # Allow with time context
     _write_log(log_file, hook_type, fmt, "allow", remaining, tool_name)
-    if remaining <= 10:
+    if remaining <= 0 and hook_type == "post":
+        msg = (
+            f"⚠️ TIME EXPIRED: 0s remaining of {timeout}s ({elapsed}s elapsed). "
+            "Do NOT make more tool calls. Write your final answer NOW."
+        )
+    elif remaining <= 10:
         msg = f"⚠️ LOW TIME: {remaining}s remaining of {timeout}s ({elapsed}s elapsed)"
     else:
         msg = f"⏱️ {remaining}s remaining of {timeout}s ({elapsed}s elapsed)"

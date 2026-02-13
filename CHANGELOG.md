@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Shared worker prompt templates (`prompts/system.md`, `prompts/user.md`)
 - Per-worker prompt extensions under `prompts/workers/`
 - Prompt-model test bench (`tests/prompt-model/`) for isolated prompt iteration
+- Level-specific search manager prompts (`prompts/search_manager/levels/`, `prompts/search_manager/agents/`)
+- E2E test suite with full container lifecycle management (5 tests: l0_default, l0_mix, l1, cancel, resume)
+- Per-test result directories with structured YAML/JSON output
 
 ### Changed
 
@@ -28,6 +31,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Perplexity worker changed from direct API call to Claude + Perplexity MCP approach
 - Config redesign: `models` section with per-level model config for session_manager, claude_workers, gemini_workers
 - Config: added `level0`, `levels`, `models` sections; removed old per-worker config
+- Timeouts no longer trigger retry for any worker (immediate return instead)
+- Repository `update()` now requires `user_id` (enforced multi-tenancy)
+- Prompt template rendering uses safe `.replace()` instead of `.format()`
+
+### Fixed
+
+- Queries containing curly braces (`{`, `}`) no longer crash prompt rendering
+- Post-hook now signals "time expired" to models when budget is exhausted
 
 ### Removed
 

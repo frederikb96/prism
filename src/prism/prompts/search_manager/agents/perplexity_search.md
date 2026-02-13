@@ -1,0 +1,1 @@
+Quick factual lookups and common knowledge. Good for wide-range info gathering efficiently. NOT suited for deep analysis. Best for: current factual information, common knowledge verification, efficient wide-range info gathering.

@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from typing import TYPE_CHECKING
 
+from prism.core.logging import log_worker_completion, parse_hook_log_detailed
 from prism.workers.factory import create_worker
 
 if TYPE_CHECKING:
@@ -19,6 +21,15 @@ if TYPE_CHECKING:
     from prism.workers.manager import Task, TaskPlan
 
 logger = logging.getLogger(__name__)
+
+
+def _collect_hook_data(worker: object, start: float) -> dict | None:
+    """Parse hook log from a worker after execution, if available."""
+    log_path = getattr(worker, "hook_log_path", None)
+    start_time = getattr(worker, "worker_start_time", None)
+    if log_path and start_time:
+        return parse_hook_log_detailed(log_path, start_time)
+    return None
 
 
 class WorkerDispatcher:
@@ -44,16 +55,11 @@ class WorkerDispatcher:
         visible_timeout: int,
         level: int,
     ) -> AgentResult:
-        """
-        Execute a single task with its assigned worker.
-
-        Args:
-            task: Task to execute
-            timeout: Actual timeout in seconds
-            visible_timeout: Timeout the agent sees
-            level: Search level for model selection
-        """
+        """Execute a single task with its assigned worker. Tracks wall time."""
         from prism.workers.base import AgentResult
+
+        agent_key = task.key or f"{task.agent_type}_0"
+        start = time.monotonic()
 
         try:
             worker = create_worker(
@@ -65,27 +71,50 @@ class WorkerDispatcher:
                 visible_timeout=visible_timeout,
             )
 
-            prompt = task.query
-            if task.context:
-                prompt = f"{task.context}\n\n{task.query}"
-
             logger.debug(
                 "Dispatching task",
                 extra={
+                    "agent_key": agent_key,
                     "agent_type": task.agent_type,
                     "query_length": len(task.query),
-                    "visible_timeout": visible_timeout,
-                    "level": level,
+                    "search_level": level,
                 },
             )
 
-            return await worker.execute(prompt, timeout_seconds=timeout)
+            result = await worker.execute(task.query, timeout_seconds=timeout)
+            wall_time = round(time.monotonic() - start, 1)
+            result.metadata["agent_key"] = agent_key
+            result.metadata["wall_time_s"] = wall_time
+
+            hook_data = _collect_hook_data(worker, start)
+            if hook_data:
+                result.metadata["tool_calls"] = hook_data["tool_calls"]
+                result.metadata["hook_blocks"] = hook_data["hook_blocks"]
+                result.metadata["tool_call_details"] = hook_data["calls"]
+
+            model = getattr(worker, "worker_model", "unknown")
+            content_len = len(result.content) if isinstance(result.content, str) else 0
+            log_worker_completion(
+                worker_type=task.agent_type,
+                agent_key=agent_key,
+                success=result.success,
+                wall_time_s=wall_time,
+                model=model,
+                response_length=content_len,
+                tool_calls=hook_data["tool_calls"] if hook_data else 0,
+                hook_blocks=hook_data["hook_blocks"] if hook_data else 0,
+                tool_call_details=hook_data["calls"] if hook_data else None,
+            )
+
+            return result
 
         except Exception as e:
-            logger.exception("Task execution failed", extra={"agent_type": task.agent_type})
+            wall_time = round(time.monotonic() - start, 1)
+            logger.exception("Task execution failed", extra={"agent_key": agent_key})
             return AgentResult.from_error(
                 error=f"Task failed: {e}",
-                agent_type=task.agent_type,
+                agent_key=agent_key,
+                wall_time_s=wall_time,
             )
 
     async def dispatch(
@@ -95,18 +124,7 @@ class WorkerDispatcher:
         visible_timeout: int,
         level: int,
     ) -> list[AgentResult]:
-        """
-        Dispatch all tasks in parallel.
-
-        Args:
-            task_plan: Plan containing tasks to dispatch
-            worker_timeout: Actual timeout per worker in seconds
-            visible_timeout: Timeout the agents see
-            level: Search level for model selection
-
-        Returns:
-            List of AgentResults (one per task)
-        """
+        """Dispatch all tasks in parallel."""
         if not task_plan.tasks:
             logger.warning("Empty task plan received")
             return []
@@ -117,7 +135,7 @@ class WorkerDispatcher:
                 "task_count": len(task_plan.tasks),
                 "timeout": worker_timeout,
                 "visible_timeout": visible_timeout,
-                "level": level,
+                "search_level": level,
             },
         )
 
@@ -134,10 +152,12 @@ class WorkerDispatcher:
         processed: list[AgentResult] = []
         for i, result in enumerate(results):
             if isinstance(result, BaseException):
+                task = task_plan.tasks[i]
+                agent_key = task.key or f"{task.agent_type}_{i}"
                 processed.append(
                     AgentResult.from_error(
                         error=f"Dispatch error: {result}",
-                        task_index=i,
+                        agent_key=agent_key,
                     )
                 )
             else:

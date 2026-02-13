@@ -252,6 +252,7 @@ class TestSearchSessionRepository:
 
         result = await session_repo.update(
             created.id,
+            "user-1",
             status=SessionStatus.RUNNING,
         )
 
@@ -275,6 +276,7 @@ class TestSearchSessionRepository:
 
         result = await session_repo.update(
             created.id,
+            "user-1",
             status=SessionStatus.COMPLETED,
             summary="Test summary",
             result={"content": "Answer", "success": True},
@@ -297,6 +299,7 @@ class TestSearchSessionRepository:
         """update() returns False for unknown session."""
         result = await session_repo.update(
             uuid.uuid4(),
+            "user-1",
             status=SessionStatus.COMPLETED,
         )
 
@@ -314,7 +317,7 @@ class TestSearchSessionRepository:
             level=1,
         )
 
-        result = await session_repo.update(created.id)
+        result = await session_repo.update(created.id, "user-1")
 
         assert result is True
 
@@ -331,6 +334,7 @@ class TestSearchSessionRepository:
         )
         await session_repo.update(
             created.id,
+            "user-1",
             claude_session_id="claude-sess-123",
         )
 
@@ -352,6 +356,7 @@ class TestSearchSessionRepository:
         )
         await session_repo.update(
             created.id,
+            "user-1",
             claude_session_id="claude-sess-123",
         )
 
@@ -482,6 +487,7 @@ class TestSearchSessionRepository:
         )
         await session_repo.update(
             created.id,
+            "user-1",
             summary="Rust programming language overview",
         )
 
