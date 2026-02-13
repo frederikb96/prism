@@ -9,6 +9,9 @@ fi
 
 cd /app
 
+# Fix ownership of mounted volumes (podman creates as root)
+chown -R appuser:appuser /home/appuser/.claude
+
 # Run migrations (Alembic is the sole schema manager)
 gosu appuser alembic upgrade head
 
