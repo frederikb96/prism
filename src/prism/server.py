@@ -288,15 +288,20 @@ async def list_sessions(
         if summary and len(summary) > 150:
             summary = summary[:150] + "..."
 
+        metadata = None
+        if session.result and isinstance(session.result, dict):
+            metadata = session.result.get("metadata")
+
         items.append({
             "id": str(session.id),
-            "query": session.query[:100] + "..." if len(session.query) > 100 else session.query,
             "level": session.level,
             "status": session.status.value,
             "summary": summary,
             "created_at": session.created_at.isoformat(),
             "duration_ms": session.duration_ms,
+            "error": session.error_message,
             "resumable": session.claude_session_id is not None and session.level > 0,
+            "metadata": metadata,
         })
 
     return serialize_response({

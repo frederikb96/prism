@@ -92,6 +92,7 @@ class WorkerDispatcher:
                 task.query, timeout_seconds=timeout, parent_session_id=parent_session_id
             )
             wall_time = round(time.monotonic() - start, 1)
+            result.metadata["agent_type"] = task.agent_type
             result.metadata["agent_key"] = agent_key
             result.metadata["wall_time_s"] = wall_time
 

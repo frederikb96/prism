@@ -69,6 +69,7 @@ class TestSearchResult:
         assert d["content"] == "test"
         assert d["session_id"] == "sess-1"
         assert d["level"] == 0
+        assert "query" not in d
 
     def test_defaults(self) -> None:
         result = SearchResult(success=False, content="")
@@ -471,7 +472,10 @@ class TestSearchFlowLevel0:
             )
 
             assert result.success is True
-            assert result.metadata.get("errors") is not None
+            workers = result.metadata.get("workers", [])
+            assert len(workers) == 2
+            failed = [w for w in workers if not w["success"]]
+            assert len(failed) == 1
 
     @pytest.mark.asyncio
     async def test_l0_uses_factory_with_level_0(
@@ -714,6 +718,7 @@ class TestSearchFlowLevel1_3:
 
         assert result.success is True
         assert result.metadata.get("fallback") is True
+        assert result.metadata.get("workers") is not None
         assert "worker 1 data" in result.content
         assert "worker 2 data" in result.content
 

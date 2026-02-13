@@ -220,7 +220,6 @@ class TestExecuteResume:
 
         assert isinstance(result, dict)
         assert result["success"] is True
-        assert result["query"] == "follow up"
 
     @pytest.mark.asyncio
     async def test_error_returns_dict(self, mock_executor: MockExecutor) -> None:

@@ -35,6 +35,22 @@ logger = logging.getLogger(__name__)
 ALL_PROVIDERS = ["claude_search", "tavily_search", "perplexity_search", "gemini_search"]
 
 
+def _build_worker_details(worker_results: list) -> list[dict[str, Any]]:
+    """Build per-worker detail list from dispatch results."""
+    details: list[dict[str, Any]] = []
+    for r in worker_results:
+        detail: dict[str, Any] = {
+            "type": r.metadata.get("agent_type", "unknown"),
+            "key": r.metadata.get("agent_key"),
+            "success": r.success,
+            "wall_time_s": r.metadata.get("wall_time_s"),
+        }
+        if r.error:
+            detail["error"] = r.error
+        details.append(detail)
+    return details
+
+
 @dataclass
 class SearchResult:
     """
@@ -59,7 +75,6 @@ class SearchResult:
             "content": self.content,
             "session_id": self.session_id,
             "level": self.level,
-            "query": self.query,
             "error": self.error,
             "created_at": self.created_at.isoformat(),
             "metadata": self.metadata,
@@ -290,14 +305,21 @@ class SearchFlow:
         )
 
         successful_sections: list[tuple[str, str]] = []
-        errors: list[str] = []
+        all_errors: list[str] = []
+        worker_details: list[dict[str, Any]] = []
 
         for i, result in enumerate(results):
             provider_name = resolved[i]
             wall_time = round(time.monotonic() - worker_starts[i], 1)
 
             if isinstance(result, BaseException):
-                errors.append(f"{provider_name}: {result}")
+                all_errors.append(f"{provider_name}: {result}")
+                worker_details.append({
+                    "type": provider_name,
+                    "success": False,
+                    "wall_time_s": wall_time,
+                    "error": str(result),
+                })
                 continue
 
             # Parse hook log and emit worker completion
@@ -326,11 +348,21 @@ class SearchFlow:
                 tool_call_details=hook_data["calls"] if hook_data else None,
             )
 
+            detail: dict[str, Any] = {
+                "type": provider_name,
+                "success": result.success,
+                "wall_time_s": wall_time,
+            }
+
             if result.success:
                 content = result.content if isinstance(result.content, str) else str(result.content)
                 successful_sections.append((provider_name, content))
             else:
-                errors.append(f"{provider_name}: {result.error or 'failed'}")
+                error_msg = result.error or "failed"
+                all_errors.append(f"{provider_name}: {error_msg}")
+                detail["error"] = error_msg
+
+            worker_details.append(detail)
 
         if not successful_sections:
             return SearchResult(
@@ -339,7 +371,8 @@ class SearchFlow:
                 session_id=session_id,
                 level=0,
                 query=query,
-                error=f"All providers failed: {'; '.join(errors)}",
+                error=f"All providers failed: {'; '.join(all_errors)}",
+                metadata={"workers": worker_details},
             )
 
         if len(resolved) == 1:
@@ -356,11 +389,7 @@ class SearchFlow:
             session_id=session_id,
             level=0,
             query=query,
-            metadata={
-                "providers": resolved,
-                "successful": [s[0] for s in successful_sections],
-                "errors": errors if errors else None,
-            },
+            metadata={"workers": worker_details},
         )
 
     async def _execute_level_1_3(
@@ -460,7 +489,9 @@ class SearchFlow:
             parent_session_id=session_id,
         )
 
-        successful_count = sum(1 for r in worker_results if r.success)
+        worker_details = _build_worker_details(worker_results)
+        successful_count = sum(1 for w in worker_details if w["success"])
+
         if successful_count == 0:
             return SearchResult(
                 success=False,
@@ -469,7 +500,10 @@ class SearchFlow:
                 level=level,
                 query=query,
                 error="All workers failed",
-                metadata={"task_count": len(task_plan.tasks)},
+                metadata={
+                    "task_count": len(task_plan.tasks),
+                    "workers": worker_details,
+                },
             )
 
         synth_start = time.monotonic()
@@ -486,19 +520,21 @@ class SearchFlow:
             session_id=manager.session_id,
         )
 
+        result_metadata: dict[str, Any] = {
+            "task_count": len(task_plan.tasks),
+            "workers": worker_details,
+        }
+
         if not synthesis_result.success:
             content = self._fallback_combine(worker_results)
+            result_metadata["fallback"] = True
             return SearchResult(
                 success=True,
                 content=content,
                 session_id=session_id,
                 level=level,
                 query=query,
-                metadata={
-                    "fallback": True,
-                    "task_count": len(task_plan.tasks),
-                    "successful_workers": successful_count,
-                },
+                metadata=result_metadata,
             )
 
         content = (
@@ -513,10 +549,7 @@ class SearchFlow:
             session_id=synthesis_result.session_id or session_id,
             level=level,
             query=query,
-            metadata={
-                "task_count": len(task_plan.tasks),
-                "successful_workers": successful_count,
-            },
+            metadata=result_metadata,
         )
 
     async def resume_session(
