@@ -15,7 +15,8 @@ if TYPE_CHECKING:
 async def execute_search(
     flow: SearchFlow,
     query: str,
-    level: int = 1,
+    level: int = 0,
+    providers: list[str] | None = None,
 ) -> dict[str, Any]:
     """
     Execute search and return MCP-compatible response.
@@ -23,10 +24,37 @@ async def execute_search(
     Args:
         flow: SearchFlow instance (injected)
         query: Search query
-        level: Search depth (0-3, default 1)
+        level: Search depth (0-3)
+        providers: L0 provider selection (None=config default)
 
     Returns:
         Dictionary with search result
     """
-    result = await flow.execute_search(query=query, level=level)
+    result = await flow.execute_search(query=query, level=level, providers=providers)
+    return result.to_dict()
+
+
+async def execute_resume(
+    flow: SearchFlow,
+    claude_session_id: str,
+    follow_up: str,
+    session_id: str,
+) -> dict[str, Any]:
+    """
+    Resume a previous session and return MCP-compatible response.
+
+    Args:
+        flow: SearchFlow instance (injected)
+        claude_session_id: Claude CLI session ID to resume
+        follow_up: Follow-up question
+        session_id: Our DB session ID
+
+    Returns:
+        Dictionary with resume result
+    """
+    result = await flow.resume_session(
+        claude_session_id=claude_session_id,
+        follow_up=follow_up,
+        session_id=session_id,
+    )
     return result.to_dict()

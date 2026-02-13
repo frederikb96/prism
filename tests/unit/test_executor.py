@@ -106,6 +106,60 @@ class TestBuildCommand:
         assert "--resume" in cmd
         assert cmd[cmd.index("--resume") + 1] == "session-123"
 
+    def test_with_mcp_config(self) -> None:
+        """Command with MCP config."""
+        executor = ClaudeExecutor()
+        mcp_cfg = {"servers": {"test": {"url": "http://localhost"}}}
+        request = ExecutionRequest(
+            prompt="Test", model="sonnet", mcp_config=mcp_cfg,
+        )
+
+        cmd = executor.build_command(request)
+
+        assert "--mcp-config" in cmd
+        mcp_str = cmd[cmd.index("--mcp-config") + 1]
+        assert json.loads(mcp_str) == mcp_cfg
+
+    def test_with_strict_mcp(self) -> None:
+        """Command with strict MCP flag."""
+        executor = ClaudeExecutor()
+        request = ExecutionRequest(
+            prompt="Test", model="sonnet", strict_mcp=True,
+        )
+
+        cmd = executor.build_command(request)
+
+        assert "--strict-mcp-config" in cmd
+
+    def test_strict_mcp_absent_when_false(self) -> None:
+        """No strict MCP flag when not set."""
+        executor = ClaudeExecutor()
+        request = ExecutionRequest(prompt="Test", model="sonnet")
+
+        cmd = executor.build_command(request)
+
+        assert "--strict-mcp-config" not in cmd
+
+    def test_with_no_session_persistence(self) -> None:
+        """Command with no-session-persistence flag."""
+        executor = ClaudeExecutor()
+        request = ExecutionRequest(
+            prompt="Test", model="sonnet", no_session_persistence=True,
+        )
+
+        cmd = executor.build_command(request)
+
+        assert "--no-session-persistence" in cmd
+
+    def test_no_session_persistence_absent_when_false(self) -> None:
+        """No session persistence flag when not set."""
+        executor = ClaudeExecutor()
+        request = ExecutionRequest(prompt="Test", model="sonnet")
+
+        cmd = executor.build_command(request)
+
+        assert "--no-session-persistence" not in cmd
+
     def test_full_command(self) -> None:
         """Command with all options."""
         executor = ClaudeExecutor()
@@ -117,11 +171,13 @@ class TestBuildCommand:
             json_schema={"type": "string"},
             system_prompt="Be concise",
             resume_session="sess-456",
+            mcp_config={"s": {}},
+            strict_mcp=True,
+            no_session_persistence=True,
         )
 
         cmd = executor.build_command(request)
 
-        # Verify all parts present
         assert cmd[0] == "claude"
         assert "-p" in cmd
         assert "--model" in cmd
@@ -130,6 +186,83 @@ class TestBuildCommand:
         assert "--json-schema" in cmd
         assert "--system-prompt" in cmd
         assert "--resume" in cmd
+        assert "--mcp-config" in cmd
+        assert "--strict-mcp-config" in cmd
+        assert "--no-session-persistence" in cmd
+
+
+class TestEffortEnvVar:
+    """Test effort level environment variable handling."""
+
+    @pytest.mark.asyncio
+    async def test_effort_sets_env_var(self) -> None:
+        """Effort field sets CLAUDE_CODE_EFFORT_LEVEL env var."""
+        executor = ClaudeExecutor()
+        request = ExecutionRequest(
+            prompt="Test", model="sonnet", timeout_seconds=10, effort="low",
+        )
+
+        mock_result = ProcessResult(stdout="{}", stderr="", returncode=0)
+
+        with patch("prism.core.executor.CancellableProcess") as MockProcess:
+            mock_process = AsyncMock()
+            mock_process.run.return_value = mock_result
+            mock_process.is_cancelled = False
+            MockProcess.return_value = mock_process
+
+            await executor.execute(request)
+
+            # Check the env passed to CancellableProcess
+            call_kwargs = MockProcess.call_args[1]
+            assert call_kwargs["env"]["CLAUDE_CODE_EFFORT_LEVEL"] == "low"
+
+    @pytest.mark.asyncio
+    async def test_no_effort_no_env_var(self) -> None:
+        """No effort field means no CLAUDE_CODE_EFFORT_LEVEL env var."""
+        executor = ClaudeExecutor()
+        request = ExecutionRequest(
+            prompt="Test", model="sonnet", timeout_seconds=10,
+        )
+
+        mock_result = ProcessResult(stdout="{}", stderr="", returncode=0)
+
+        with patch("prism.core.executor.CancellableProcess") as MockProcess:
+            mock_process = AsyncMock()
+            mock_process.run.return_value = mock_result
+            mock_process.is_cancelled = False
+            MockProcess.return_value = mock_process
+
+            await executor.execute(request)
+
+            call_kwargs = MockProcess.call_args[1]
+            env = call_kwargs["env"]
+            if env is not None:
+                assert "CLAUDE_CODE_EFFORT_LEVEL" not in env
+
+
+class TestTimeoutNone:
+    """Test timeout_seconds=None support."""
+
+    @pytest.mark.asyncio
+    async def test_timeout_none_passed_to_process(self) -> None:
+        """timeout_seconds=None is passed through to CancellableProcess."""
+        executor = ClaudeExecutor()
+        request = ExecutionRequest(
+            prompt="Test", model="sonnet", timeout_seconds=None,
+        )
+
+        mock_result = ProcessResult(stdout="{}", stderr="", returncode=0)
+
+        with patch("prism.core.executor.CancellableProcess") as MockProcess:
+            mock_process = AsyncMock()
+            mock_process.run.return_value = mock_result
+            mock_process.is_cancelled = False
+            MockProcess.return_value = mock_process
+
+            await executor.execute(request)
+
+            call_kwargs = MockProcess.call_args[1]
+            assert call_kwargs["timeout_seconds"] is None
 
 
 class TestExecute:

@@ -24,8 +24,15 @@ from typing import Any
 
 import yaml
 from fastmcp import Client
-from fixtures import LEVEL_0_QUERY, LEVEL_1_QUERY, RESUME_QUERY
-from log_checker import check_container_logs
+from fixtures import (
+    HOOK_BLOCK_QUERY,
+    LEVEL_0_GEMINI_QUERY,
+    LEVEL_0_MIX_QUERY,
+    LEVEL_0_QUERY,
+    LEVEL_1_QUERY,
+    RESUME_QUERY,
+)
+from log_checker import check_container_logs, find_hook_blocks_in_logs
 
 # Project root for docker-compose
 PROJECT_ROOT = Path(__file__).parent.parent.parent
@@ -37,12 +44,23 @@ SSE_URL = "http://localhost:8766/sse"
 
 # Test timeouts
 LEVEL_0_TIMEOUT = 60
+LEVEL_0_MIX_TIMEOUT = 120
+LEVEL_0_GEMINI_TIMEOUT = 60
 LEVEL_1_TIMEOUT = 180
+HOOK_BLOCK_TIMEOUT = 90
 RESUME_TIMEOUT = 180
 CANCEL_SEARCH_DELAY = 10
 
-# All available tests
-ALL_TESTS = ["level_0", "level_1", "resume", "cancel"]
+# All available tests (run in this order)
+ALL_TESTS = [
+    "level_0",
+    "level_0_mix",
+    "level_0_gemini",
+    "level_1",
+    "hook_block",
+    "resume",
+    "cancel",
+]
 
 
 @dataclass
@@ -132,23 +150,36 @@ class TestRunner:
         except yaml.YAMLError:
             return {"content": text, "success": True}
 
-    async def test_level_0(self) -> TestResult:
+    async def _run_l0_search(
+        self,
+        *,
+        name: str,
+        query: str,
+        timeout: int,
+        providers: list[str] | None = None,
+        min_content_length: int = 100,
+    ) -> TestResult:
         """
-        Test Level 0 search (direct Perplexity).
+        Shared helper for Level 0 search tests.
 
-        Validates:
-        - Response within timeout
-        - Content length > 100 characters
-        - No errors in response
+        Args:
+            name: Test name for reporting
+            query: Search query
+            timeout: Timeout in seconds
+            providers: Optional provider list (None = config default)
+            min_content_length: Minimum expected content length
         """
         start = time.time()
-        name = "level_0"
 
         try:
+            params: dict[str, Any] = {"query": query, "level": 0}
+            if providers is not None:
+                params["providers"] = providers
+
             async with Client(self.sse_url) as client:
                 result = await asyncio.wait_for(
-                    client.call_tool("search", {"query": LEVEL_0_QUERY, "level": 0}),
-                    timeout=LEVEL_0_TIMEOUT,
+                    client.call_tool("search", params),
+                    timeout=timeout,
                 )
 
             duration = time.time() - start
@@ -165,12 +196,15 @@ class TestRunner:
                 )
 
             content = parsed.get("content", "")
-            if len(content) < 100:
+            if len(content) < min_content_length:
                 return TestResult(
                     name=name,
                     passed=False,
                     duration=duration,
-                    error=f"Content too short: {len(content)} chars (expected >100)",
+                    error=(
+                        f"Content too short: {len(content)} chars"
+                        f" (expected >{min_content_length})"
+                    ),
                     details={"content_length": len(content)},
                 )
 
@@ -189,7 +223,7 @@ class TestRunner:
                 name=name,
                 passed=False,
                 duration=time.time() - start,
-                error=f"Timeout after {LEVEL_0_TIMEOUT}s",
+                error=f"Timeout after {timeout}s",
             )
         except Exception as e:
             return TestResult(
@@ -199,14 +233,58 @@ class TestRunner:
                 error=str(e),
             )
 
-    async def test_level_1(self) -> TestResult:
+    async def test_level_0(self) -> TestResult:
         """
-        Test Level 1 search (parallel workers).
+        Test Level 0 search with default provider (claude_search via config).
 
         Validates:
-        - Response within timeout
+        - success=True
         - Content length > 100 characters
-        - Session ID returned (saved for resume test)
+        """
+        return await self._run_l0_search(
+            name="level_0",
+            query=LEVEL_0_QUERY,
+            timeout=LEVEL_0_TIMEOUT,
+        )
+
+    async def test_level_0_mix(self) -> TestResult:
+        """
+        Test Level 0 search with all 4 providers in parallel ("mix").
+
+        Validates:
+        - success=True
+        - Content present from multi-provider synthesis
+        """
+        return await self._run_l0_search(
+            name="level_0_mix",
+            query=LEVEL_0_MIX_QUERY,
+            timeout=LEVEL_0_MIX_TIMEOUT,
+            providers=["mix"],
+        )
+
+    async def test_level_0_gemini(self) -> TestResult:
+        """
+        Test Level 0 search with gemini_search provider only.
+
+        Validates:
+        - success=True
+        - Content length > 100 characters
+        """
+        return await self._run_l0_search(
+            name="level_0_gemini",
+            query=LEVEL_0_GEMINI_QUERY,
+            timeout=LEVEL_0_GEMINI_TIMEOUT,
+            providers=["gemini_search"],
+        )
+
+    async def test_level_1(self) -> TestResult:
+        """
+        Test Level 1 search (parallel workers via manager).
+
+        Validates:
+        - success=True
+        - Content length > 100 characters
+        - session_id present (saved for resume test)
         """
         start = time.time()
         name = "level_1"
@@ -244,6 +322,15 @@ class TestRunner:
                     details={"content_length": len(content), "session_id": session_id},
                 )
 
+            if not session_id:
+                return TestResult(
+                    name=name,
+                    passed=False,
+                    duration=duration,
+                    error="No session_id in response",
+                    details={"content_length": len(content)},
+                )
+
             return TestResult(
                 name=name,
                 passed=True,
@@ -269,11 +356,88 @@ class TestRunner:
                 error=str(e),
             )
 
+    async def test_hook_block(self) -> TestResult:
+        """
+        Test that the time hook blocks tool calls when budget is exhausted.
+
+        Sends a query designed to trigger tool usage. With a short tool budget
+        (~1s), the hook should block on first tool call attempt.
+
+        Validates:
+        - success=True (model responds despite blocking)
+        - Container JSON logs show hook_blocks > 0
+        """
+        start = time.time()
+        name = "hook_block"
+
+        try:
+            async with Client(self.sse_url) as client:
+                result = await asyncio.wait_for(
+                    client.call_tool(
+                        "search",
+                        {"query": HOOK_BLOCK_QUERY, "level": 0},
+                    ),
+                    timeout=HOOK_BLOCK_TIMEOUT,
+                )
+
+            duration = time.time() - start
+
+            response_text = result.content[0].text if result.content else ""
+            parsed = self._parse_yaml_response(response_text)
+
+            if not parsed.get("success", False):
+                return TestResult(
+                    name=name,
+                    passed=False,
+                    duration=duration,
+                    error=parsed.get("error", "Unknown error"),
+                )
+
+            # Check container logs for hook_blocks > 0
+            hook_blocks = find_hook_blocks_in_logs(CONTAINER_NAME)
+
+            details: dict[str, Any] = {
+                "content_length": len(parsed.get("content", "")),
+                "hook_blocks_in_logs": hook_blocks,
+            }
+
+            if hook_blocks == 0:
+                return TestResult(
+                    name=name,
+                    passed=False,
+                    duration=duration,
+                    error="No hook_blocks found in container logs (expected > 0)",
+                    details=details,
+                )
+
+            return TestResult(
+                name=name,
+                passed=True,
+                duration=duration,
+                details=details,
+            )
+
+        except asyncio.TimeoutError:
+            return TestResult(
+                name=name,
+                passed=False,
+                duration=time.time() - start,
+                error=f"Timeout after {HOOK_BLOCK_TIMEOUT}s",
+            )
+        except Exception as e:
+            return TestResult(
+                name=name,
+                passed=False,
+                duration=time.time() - start,
+                error=str(e),
+            )
+
     async def test_resume(self) -> TestResult:
         """
-        Test follow-up query.
+        Test sequential L1 query handling.
 
-        Validates that the server can handle sequential queries.
+        Runs a second L1 search after the first (from test_level_1) to verify
+        the server can handle sequential requests without issues.
         """
         start = time.time()
         name = "resume"
@@ -341,8 +505,8 @@ class TestRunner:
         """
         Test search cancellation.
 
-        Starts a real Level 1 search, waits, then calls cancel_all.
-        Validates that cancellation works and logs are clean.
+        Starts a Level 1 search, waits, then calls cancel_all.
+        Validates clean termination with no errors in logs.
         """
         start = time.time()
         name = "cancel"
@@ -359,7 +523,9 @@ class TestRunner:
 
                 # Cancel all active searches
                 cancel_result = await client.call_tool("cancel_all", {})
-                cancel_text = cancel_result.content[0].text if cancel_result.content else ""
+                cancel_text = (
+                    cancel_result.content[0].text if cancel_result.content else ""
+                )
                 cancel_parsed = self._parse_yaml_response(cancel_text)
 
                 # Wait for the search to complete (should be cancelled or finish)
@@ -408,7 +574,10 @@ class TestRunner:
         """Run specified tests in order."""
         test_methods = {
             "level_0": self.test_level_0,
+            "level_0_mix": self.test_level_0_mix,
+            "level_0_gemini": self.test_level_0_gemini,
             "level_1": self.test_level_1,
+            "hook_block": self.test_hook_block,
             "resume": self.test_resume,
             "cancel": self.test_cancel,
         }

@@ -31,9 +31,7 @@ def _read_tool_name() -> str:
     return ""
 
 
-def _write_log(
-    log_file: str, hook_type: str, fmt: str, decision: str, remaining: int, tool_name: str = "",
-) -> None:
+def _write_log(log_file: str, hook_type: str, fmt: str, decision: str, remaining: int, tool_name: str = "") -> None:
     try:
         entry: dict[str, Any] = {
             "hook": hook_type,

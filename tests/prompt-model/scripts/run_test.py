@@ -6,7 +6,8 @@ Designed to run inside the prism-test container.
 
 Usage (via podman exec):
     python /app/scripts/run_test.py --provider claude --model haiku --query simple
-    python /app/scripts/run_test.py --provider gemini --model gemini-2.5-flash --query simple --timeout 30
+    python /app/scripts/run_test.py --provider gemini --model gemini-2.5-flash \
+        --query simple --timeout 30
 """
 
 from __future__ import annotations
@@ -340,7 +341,11 @@ def extract_metrics(result: dict) -> dict:
         tools = stats.get("tools", {})
         by_name = tools.get("byName", {})
         metrics["gemini_tool_breakdown"] = {
-            name: {"count": info.get("count", 0), "success": info.get("success", 0), "fail": info.get("fail", 0)}
+            name: {
+                "count": info.get("count", 0),
+                "success": info.get("success", 0),
+                "fail": info.get("fail", 0),
+            }
             for name, info in by_name.items()
         }
         metrics["gemini_tool_duration_ms"] = tools.get("totalDurationMs", 0)
@@ -385,7 +390,7 @@ def print_result(result: dict, query: dict) -> None:
             print(f"     {k}: {v}")
 
     hook_activity = parse_hook_activity(result.get("hook_events", []))
-    print(f"\n  Hook Activity:")
+    print("\n  Hook Activity:")
     print(f"     tool calls: {hook_activity['tool_calls_observed']}")
     print(f"     blocks: {hook_activity['blocks']}")
     print(f"     total events: {hook_activity['total_events']}")
@@ -486,7 +491,10 @@ def main() -> None:
         args.label = "-".join(label_parts) if label_parts else ""
     label_info = f" [{args.label}]" if args.label else ""
     worker_info = f" worker={worker_type}" if worker_type != "websearch" else ""
-    print(f"Starting test: {args.provider}/{args.model}{label_info}{worker_info} -- query={query['name']} -- timeout={args.timeout}s")
+    print(
+        f"Starting test: {args.provider}/{args.model}{label_info}{worker_info}"
+        f" -- query={query['name']} -- timeout={args.timeout}s"
+    )
 
     try:
         if args.provider == "claude":

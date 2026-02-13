@@ -83,6 +83,15 @@ class ClaudeExecutor:
             settings_json = json.dumps(request.hooks_config)
             cmd.extend(["--settings", settings_json])
 
+        if request.mcp_config:
+            cmd.extend(["--mcp-config", json.dumps(request.mcp_config)])
+
+        if request.strict_mcp:
+            cmd.append("--strict-mcp-config")
+
+        if request.no_session_persistence:
+            cmd.append("--no-session-persistence")
+
         return cmd
 
     async def execute(
@@ -120,7 +129,12 @@ class ClaudeExecutor:
         )
 
         config = get_config()
-        env = dict(request.env_vars) if request.env_vars else None
+        env_dict = dict(request.env_vars) if request.env_vars else {}
+
+        if request.effort:
+            env_dict["CLAUDE_CODE_EFFORT_LEVEL"] = request.effort
+
+        env = env_dict or None
 
         process = CancellableProcess(
             cmd=cmd,

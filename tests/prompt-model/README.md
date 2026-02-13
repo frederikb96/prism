@@ -89,16 +89,15 @@ Structure:
 - **Individual file mounts break hot-reload** in rootless podman — always mount directories
 - **Claude CLI does not forward hook stderr** — hook detection uses marker file, not stderr
 
-## Test Status (2026-02-10)
+## Test Status (2026-02-11)
 
-| Provider | Model | Wall Time | Tool Calls | Blocks | Response |
-|----------|-------|-----------|------------|--------|----------|
-| Claude | haiku | 16.4s | 2 | 0 | 1,665 chars |
-| Claude | sonnet | 51.0s | 2 | 0 | 2,144 chars |
-| Claude | opus | 45.3s | 2 | 0 | 2,531 chars |
-| Gemini | 2.5-flash-lite | 11.7s | 1 | 0 | 939 chars |
-| Gemini | 2.5-flash | 16.3s | 1 | 0 | 2,630 chars |
-| Gemini | 3-flash-preview | 21.0s | 2 | 0 | 1,938 chars |
-| Gemini | 3-pro-preview | 27.8s | 1 | 0 | 1,187 chars |
+| Provider | Model | Worker | Query | Wall Time | Tool Calls | Blocks | Response |
+|----------|-------|--------|-------|-----------|------------|--------|----------|
+| Claude | haiku | websearch | simple | 15.1s | 1 | 0 | 855 chars |
+| Claude | haiku | tavily | simple | 12.5s | 1 | 0 | 1,184 chars |
+| Gemini | gemini-3-flash-preview | google | simple | 23.5s | 2 | 0 | 1,564 chars |
+| Claude | haiku | websearch | medium | 46.3s | 8 | 0 | 1,770 chars |
+| Claude | haiku | tavily | medium | 36.4s | 5 | 0 | 1,851 chars |
+| Gemini | gemini-3-flash-preview | google | medium | 66.9s | 2 | 0 | 2,367 chars |
 
-All on `simple` query (Bitcoin price), 50s timeout. Hook blocking confirmed working with 5s timeout tests.
+6/6 passing (3 providers x simple+medium). 50s timeout for all queries. Hook blocking confirmed working with 5s timeout tests.

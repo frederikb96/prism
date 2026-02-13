@@ -16,21 +16,67 @@ search:
 
 levels:
   0:
-    manager_timeout_seconds: 0
-    worker_timeout_seconds: 60
-    worker_visible_timeout: 60
+    worker_timeout_seconds: 70
+    worker_visible_timeout: 30
   1:
-    manager_timeout_seconds: 30
-    worker_timeout_seconds: 90
-    worker_visible_timeout: 60
+    worker_timeout_seconds: 130
+    worker_visible_timeout: 70
+    agent_allocation:
+      claude_search: 1
+      gemini_search: 1
+      tavily_search: 1
+      perplexity_search: 1
   2:
-    manager_timeout_seconds: 60
-    worker_timeout_seconds: 240
-    worker_visible_timeout: 180
+    worker_timeout_seconds: 230
+    worker_visible_timeout: 150
+    agent_allocation:
+      claude_search: 2
+      gemini_search: 2
+      tavily_search: 1
+      perplexity_search: 1
   3:
-    manager_timeout_seconds: 120
-    worker_timeout_seconds: 720
-    worker_visible_timeout: 600
+    worker_timeout_seconds: 600
+    worker_visible_timeout: 480
+    agent_allocation:
+      claude_search: 3
+      gemini_search: 2
+      tavily_search: 2
+      perplexity_search: 1
+
+models:
+  session_manager:
+    1:
+      model: opus
+      effort: low
+    2:
+      model: opus
+      effort: low
+    3:
+      model: opus
+  claude_workers:
+    0:
+      model: haiku
+    1:
+      model: opus
+      effort: low
+    2:
+      model: opus
+      effort: low
+    3:
+      model: opus
+  gemini_workers:
+    0:
+      model: gemini-3-flash-preview
+    1:
+      model: gemini-3-flash-preview
+    2:
+      model: gemini-3-pro-preview
+    3:
+      model: gemini-3-pro-preview
+
+level0:
+  default_providers:
+    - claude_search
 
 retry:
   max_transient_retries: 3
@@ -42,24 +88,6 @@ retry:
 process:
   sigterm_timeout_seconds: 2.0
   sigkill_timeout_seconds: 5.0
-
-synthesizer:
-  model: sonnet
-  default_timeout_seconds: 60
-
-workers:
-  perplexity:
-    model: sonnet
-    default_timeout_seconds: 30
-  tavily:
-    model: sonnet
-    default_timeout_seconds: 60
-  researcher:
-    model: sonnet
-    default_timeout_seconds: 60
-  manager:
-    model: sonnet
-    default_timeout_seconds: 60
 
 database:
   url: postgresql+asyncpg://prism:prism@localhost:5432/prism

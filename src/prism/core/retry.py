@@ -192,7 +192,7 @@ class RetryExecutor:
                 if result.is_cancelled:
                     return result
 
-                if not result.success and self._is_transient_error(result):
+                if not result.success and result.is_transient_error():
                     if attempt < self._config.max_transient_retries:
                         logger.warning(
                             "Transient error: %s, will retry",
@@ -213,31 +213,6 @@ class RetryExecutor:
             return ExecutionResult.from_error(str(last_error))
 
         return ExecutionResult.from_error("Unknown error during retry")
-
-    def _is_transient_error(self, result: ExecutionResult) -> bool:
-        """
-        Determine if an error is transient and worth retrying.
-
-        Args:
-            result: Failed execution result
-        """
-        if result.is_timeout:
-            return True
-
-        error = result.error_message or ""
-        transient_patterns = [
-            "connection",
-            "timeout",
-            "temporary",
-            "unavailable",
-            "rate limit",
-            "429",
-            "503",
-            "502",
-        ]
-
-        error_lower = error.lower()
-        return any(pattern in error_lower for pattern in transient_patterns)
 
     def _validate_output(
         self,

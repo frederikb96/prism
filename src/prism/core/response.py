@@ -21,7 +21,7 @@ class ExecutionRequest:
 
     prompt: str
     model: str = "sonnet"
-    timeout_seconds: int = 60
+    timeout_seconds: int | None = 60
     tools: str | None = None
     allowed_tools: tuple[str, ...] = ()
     json_schema: dict[str, Any] | None = None
@@ -29,6 +29,10 @@ class ExecutionRequest:
     resume_session: str | None = None
     hooks_config: dict[str, Any] | None = None
     env_vars: tuple[tuple[str, str], ...] | None = None
+    mcp_config: dict[str, Any] | None = None
+    strict_mcp: bool = False
+    no_session_persistence: bool = False
+    effort: str | None = None
 
     def with_changes(self, **kwargs: Any) -> ExecutionRequest:
         """Create a new request with specified fields changed."""
@@ -84,7 +88,7 @@ class ExecutionResult:
         )
 
     @classmethod
-    def from_timeout(cls, timeout_seconds: int) -> ExecutionResult:
+    def from_timeout(cls, timeout_seconds: int | None) -> ExecutionResult:
         """Create a timeout result."""
         return cls(
             success=False,
@@ -102,3 +106,21 @@ class ExecutionResult:
             error_message="Execution was cancelled",
             is_cancelled=True,
         )
+
+    TRANSIENT_PATTERNS: tuple[str, ...] = (
+        "connection",
+        "timeout",
+        "temporary",
+        "unavailable",
+        "rate limit",
+        "429",
+        "503",
+        "502",
+    )
+
+    def is_transient_error(self) -> bool:
+        """Determine if this error is transient and worth retrying."""
+        if self.is_timeout:
+            return True
+        error_lower = (self.error_message or "").lower()
+        return any(pattern in error_lower for pattern in self.TRANSIENT_PATTERNS)

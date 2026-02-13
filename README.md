@@ -4,16 +4,16 @@
 [![Release](https://img.shields.io/github/v/release/frederikb96/prism)](https://github.com/frederikb96/prism/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Multi-level web search MCP server. Wraps Perplexity, Claude, and Tavily behind a unified interface.
+Multi-level web search MCP server. Wraps Claude, Gemini, Perplexity, and Tavily behind a unified interface.
 
 ## Search Levels
 
-- **Level 0**: Instant - direct Perplexity API call
-- **Level 1**: Quick - 1-2 sources, parallel workers
-- **Level 2**: Standard - 3-5 sources, comprehensive
-- **Level 3**: Deep - 6+ sources, exhaustive research
+- **Level 0**: Instant - direct worker call (default: claude_search), supports multi-provider selection
+- **Level 1**: Quick - 2-3 workers, parallel dispatch (~60s)
+- **Level 2**: Standard - 4-6 workers, comprehensive (~150s)
+- **Level 3**: Deep - 8-12 workers, exhaustive research (~600s)
 
-Levels 1-3 use a search manager that plans tasks, dispatches parallel workers, and synthesizes results.
+All 4 worker types (claude_search, tavily_search, perplexity_search, gemini_search) are available at every level. L0 supports explicit provider selection via the `providers` parameter. Levels 1-3 use a search manager that plans tasks, dispatches parallel workers, and synthesizes results.
 
 ## Quick Start
 
@@ -24,9 +24,10 @@ Levels 1-3 use a search manager that plans tasks, dispatches parallel workers, a
   ```bash
   mkdir -p ~/.config/prism
   cat > ~/.config/prism/.env << 'EOF'
+  CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-...
+  GOOGLE_API_KEY=AI...
   PERPLEXITY_API_KEY=pplx-...
   TAVILY_API_KEY=tvly-...
-  CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-...
   EOF
   ```
 
@@ -85,11 +86,12 @@ Add to Claude Desktop config (`~/.config/claude/claude_desktop_config.json`):
 ## API
 
 **Tools:**
-- `search(query, level=0)` - Execute search at specified depth
+- `search(query, level=0, providers=None)` - Execute search at specified depth
+  - `providers` (L0 only): `["claude_search"]`, `["tavily_search"]`, `["gemini_search"]`, `["perplexity_search"]`, any combination, or `["mix"]` for all 4 in parallel. Default (None): claude_search only.
 - `cancel(session_id)` - Cancel running search
 - `cancel_all()` - Cancel all running searches
 - `get_session(session_id)` - Retrieve session details
-- `list_sessions(limit=20)` - List recent sessions
+- `list_sessions(limit=20, offset=0, search=None)` - List recent sessions
 - `resume(session_id, follow_up)` - Resume L1-L3 session with follow-up
 
 ## Development
@@ -124,32 +126,35 @@ uv run alembic upgrade head
 ## Architecture
 
 ```
-                    MCP Client
-                        |
-                   [FastMCP Server]
-                        |
-        +---------------+---------------+
-        |               |               |
-    Level 0         Level 1-3       Session
-   (direct)      (orchestrated)    Management
-        |               |
-   [Perplexity]  [Search Manager]
-                        |
-                 [Task Dispatcher]
-                        |
-            +-----------+-----------+
-            |           |           |
-       [Researcher] [Tavily]  [Perplexity]
-            |           |           |
-            +-----------+-----------+
-                        |
-                  [Synthesizer]
-                        |
-                    Response
+                       MCP Client
+                           |
+                      [FastMCP Server]
+                           |
+           +---------------+---------------+
+           |               |               |
+       Level 0         Level 1-3       Session
+   (multi-provider)  (orchestrated)   Management
+           |               |
+    [Worker Factory]  [Search Manager]
+           |               |
+    +------+------+   [Worker Dispatcher]
+    |      |      |        |
+  [1-4 workers]    +-------+-------+-------+
+    in parallel    |       |       |       |
+           [Claude] [Gemini] [Tavily] [Perplexity]
+                   |       |       |       |
+                   +-------+-------+-------+
+                           |
+                     [Synthesizer]
+                           |
+                       Response
 ```
 
 **Key patterns:**
-- Single Claude CLI invocation point (`core/executor.py`)
-- Two-tier retry: transient errors + schema validation with `--resume`
+- Dual CLI executors: `core/executor.py` (Claude), `core/gemini.py` (Gemini)
+- Unified worker factory: same 4 worker types available at all levels
+- Two-tier retry: transient errors + schema validation with `--resume` (Claude only)
+- Time-aware hooks for both Claude and Gemini CLI agents
+- JSON-lines structured logging
 - DI throughout, no global state
 - Multi-tenancy via user_id scoping

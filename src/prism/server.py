@@ -16,15 +16,15 @@ from typing import Annotated, Any, AsyncIterator
 from fastmcp import FastMCP
 
 from prism.config import get_config
-from prism.core import ClaudeExecutor, RetryExecutor, SessionRegistry
+from prism.core import ClaudeExecutor, GeminiExecutor, RetryExecutor, SessionRegistry
 from prism.database import (
     SearchSessionRepository,
     close_database,
     init_database,
 )
 from prism.mcp_serializer import serialize_response
-from prism.orchestrator import ResultSynthesizer, SearchFlow, WorkerDispatcher
-from prism.tools import execute_cancel, execute_search
+from prism.orchestrator import SearchFlow, WorkerDispatcher
+from prism.tools import execute_cancel, execute_resume, execute_search
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +76,6 @@ async def lifespan(server: FastMCP) -> AsyncIterator[None]:
 
     config = get_config()
 
-    # Get user_id from environment (MCP server registration)
     _user_id = os.environ.get("PRISM_USER_ID", DEFAULT_USER_ID)
     logger.info("User ID configured", extra={"user_id": _user_id})
 
@@ -90,15 +89,17 @@ async def lifespan(server: FastMCP) -> AsyncIterator[None]:
 
     executor = ClaudeExecutor(session_registry=_session_registry)
     retry_executor = RetryExecutor(executor=executor)
+    gemini_executor = GeminiExecutor(session_registry=_session_registry)
 
-    # All agents use RetryExecutor for consistent retry behavior
-    dispatcher = WorkerDispatcher(executor=retry_executor)
-    synthesizer = ResultSynthesizer(executor=retry_executor)
+    dispatcher = WorkerDispatcher(
+        claude_executor=retry_executor,
+        gemini_executor=gemini_executor,
+    )
 
     _search_flow = SearchFlow(
         retry_executor=retry_executor,
+        gemini_executor=gemini_executor,
         dispatcher=dispatcher,
-        synthesizer=synthesizer,
         session_registry=_session_registry,
         session_repository=_session_repository,
         user_id=_user_id,
@@ -128,12 +129,16 @@ mcp = FastMCP(
     instructions=(
         "Prism is a unified web search interface with level-based search depth.\n\n"
         "Search Levels:\n"
-        "- Level 0: Instant Perplexity (direct API, fast)\n"
+        "- Level 0: Instant (default) - direct worker call, supports provider selection\n"
         "- Level 1: Quick search (2-3 workers, ~60s)\n"
         "- Level 2: Normal search (4-6 workers, ~150s)\n"
         "- Level 3: Deep search (8-12 workers, ~600s)\n\n"
+        "L0 Providers:\n"
+        "- claude_search, tavily_search, perplexity_search, gemini_search\n"
+        "- 'mix' = all 4 in parallel\n"
+        "- Default (None) = claude_search only\n\n"
         "Tools:\n"
-        "- search(query, level?): Execute search at specified depth\n"
+        "- search(query, level?, providers?): Execute search at specified depth\n"
         "- resume(session_id): Resume a previous L1-L3 search\n"
         "- get_session(session_id): Get session details\n"
         "- list_sessions(limit?, offset?, search?): List past sessions\n"
@@ -147,18 +152,24 @@ mcp = FastMCP(
 @mcp.tool()
 async def search(
     query: Annotated[str, "Search query"],
-    level: Annotated[int, "Search depth: 0=instant, 1=quick, 2=normal, 3=deep"] = 1,
+    level: Annotated[int, "Search depth: 0=instant, 1=quick, 2=normal, 3=deep"] = 0,
+    providers: Annotated[
+        list[str] | None,
+        'L0 provider selection. Options: "claude_search", "tavily_search", '
+        '"perplexity_search", "gemini_search". Special: "mix" = all 4 in parallel. '
+        "Any combination allowed. Default (None): claude_search only. Ignored for L1-L3.",
+    ] = None,
 ) -> str:
     """
     Execute a search with the specified level of depth.
 
-    Level 0 uses direct Perplexity API (fast, no orchestration).
+    Level 0 uses direct worker call (fast, supports provider selection).
     Level 1-3 use manager + workers for comprehensive search.
 
     Returns human-readable YAML with content and metadata.
     """
     flow = _get_search_flow()
-    result = await execute_search(flow=flow, query=query, level=level)
+    result = await execute_search(flow=flow, query=query, level=level, providers=providers)
     return serialize_response(result)
 
 
@@ -348,12 +359,11 @@ async def resume(
             "session_created": session.created_at.isoformat(),
         })
 
-    return serialize_response({
-        "success": True,
-        "message": "Session is resumable",
-        "session_id": str(session.id),
-        "claude_session_id": session.claude_session_id,
-        "original_query": session.query,
-        "follow_up": follow_up,
-        "note": "Resume functionality requires claude CLI --resume flag integration",
-    })
+    flow = _get_search_flow()
+    result = await execute_resume(
+        flow=flow,
+        claude_session_id=session.claude_session_id,
+        follow_up=follow_up,
+        session_id=str(session.id),
+    )
+    return serialize_response(result)

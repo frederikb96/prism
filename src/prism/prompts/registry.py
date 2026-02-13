@@ -184,6 +184,54 @@ class PromptRegistry:
 
         return path
 
+    def build_system_prompt(self, worker_type: str) -> str:
+        """
+        Compose system prompt with worker-specific tool section injected.
+
+        Loads system.md template and replaces {worker_section} with
+        the content from workers/<worker_type>.md.
+
+        Args:
+            worker_type: Worker type identifier (e.g., "websearch", "tavily")
+
+        Returns:
+            Composed system prompt string
+
+        Raises:
+            RuntimeError: If system.md or worker section file not found
+        """
+        template = self.get_content("system")
+        if template is None:
+            raise RuntimeError("System prompt template not found: system.md")
+
+        worker_section = self.get_content(f"workers/{worker_type}")
+        if worker_section is None:
+            raise RuntimeError(f"Worker section not found: workers/{worker_type}.md")
+
+        return template.replace("{worker_section}", worker_section.strip())
+
+    def build_user_prompt(self, query: str, timeout_seconds: int) -> str:
+        """
+        Compose user prompt with query and timeout substituted.
+
+        Loads user.md template and replaces {query} and {timeout_seconds}.
+
+        Args:
+            query: The search query
+            timeout_seconds: Tool budget in seconds
+
+        Returns:
+            Composed user prompt string
+
+        Raises:
+            RuntimeError: If user.md template not found
+        """
+        template = self.get_content("user")
+        if template is None:
+            raise RuntimeError("User prompt template not found: user.md")
+
+        return template.format(query=query, timeout_seconds=timeout_seconds)
+
     def list_templates(self, pattern: str = "**/*.md") -> list[str]:
         """
         List available templates.

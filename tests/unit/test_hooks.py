@@ -1,8 +1,9 @@
-"""Unit tests for time awareness hooks."""
+"""Unit tests for hooks configuration builders and time hook script."""
 
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -11,19 +12,20 @@ import pytest
 
 from prism.core.hooks import (
     HOOK_SCRIPT_PATH,
-    build_time_awareness_hooks,
+    build_claude_hooks,
+    build_gemini_settings_file,
     build_time_env_vars,
 )
 
-HOOK_SCRIPT = Path(__file__).parent.parent.parent / "hooks" / "time_tracker.py"
+HOOK_SCRIPT = Path(__file__).parent.parent.parent / "hooks" / "time_hook.py"
 
 
-class TestBuildTimeAwarenessHooks:
-    """Tests for build_time_awareness_hooks function."""
+class TestBuildClaudeHooks:
+    """Tests for build_claude_hooks function."""
 
     def test_returns_valid_structure(self) -> None:
         """Hook config has correct structure."""
-        config = build_time_awareness_hooks()
+        config = build_claude_hooks()
 
         assert "hooks" in config
         assert "PreToolUse" in config["hooks"]
@@ -31,7 +33,7 @@ class TestBuildTimeAwarenessHooks:
 
     def test_pre_tool_use_config(self) -> None:
         """PreToolUse hook is correctly configured."""
-        config = build_time_awareness_hooks()
+        config = build_claude_hooks()
         pre_hooks = config["hooks"]["PreToolUse"]
 
         assert len(pre_hooks) == 1
@@ -41,7 +43,7 @@ class TestBuildTimeAwarenessHooks:
 
     def test_post_tool_use_config(self) -> None:
         """PostToolUse hook is correctly configured."""
-        config = build_time_awareness_hooks()
+        config = build_claude_hooks()
         post_hooks = config["hooks"]["PostToolUse"]
 
         assert len(post_hooks) == 1
@@ -51,7 +53,7 @@ class TestBuildTimeAwarenessHooks:
 
     def test_uses_correct_script_path(self) -> None:
         """Hooks reference the correct script path."""
-        config = build_time_awareness_hooks()
+        config = build_claude_hooks()
 
         pre_cmd = config["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
         post_cmd = config["hooks"]["PostToolUse"][0]["hooks"][0]["command"]
@@ -60,57 +62,104 @@ class TestBuildTimeAwarenessHooks:
         assert HOOK_SCRIPT_PATH in post_cmd
 
 
+class TestBuildGeminiSettingsFile:
+    """Tests for build_gemini_settings_file function."""
+
+    def test_creates_temp_file(self) -> None:
+        """Creates a temp file and returns its path."""
+        path = build_gemini_settings_file()
+        try:
+            assert os.path.exists(path)
+            assert path.startswith("/tmp/prism-gemini-settings-")
+            assert path.endswith(".json")
+        finally:
+            os.unlink(path)
+
+    def test_valid_json_content(self) -> None:
+        """File contains valid JSON."""
+        path = build_gemini_settings_file()
+        try:
+            with open(path) as f:
+                data = json.load(f)
+            assert isinstance(data, dict)
+        finally:
+            os.unlink(path)
+
+    def test_has_gemini_hook_structure(self) -> None:
+        """Settings file has BeforeTool/AfterTool hooks."""
+        path = build_gemini_settings_file()
+        try:
+            with open(path) as f:
+                data = json.load(f)
+
+            assert data["hooksConfig"]["enabled"] is True
+            assert "BeforeTool" in data["hooks"]
+            assert "AfterTool" in data["hooks"]
+
+            before = data["hooks"]["BeforeTool"][0]
+            assert before["matcher"] == "*"
+            assert "pre" in before["hooks"][0]["command"]
+            assert before["hooks"][0]["name"] == "prism-time-before"
+
+            after = data["hooks"]["AfterTool"][0]
+            assert after["matcher"] == "*"
+            assert "post" in after["hooks"][0]["command"]
+            assert after["hooks"][0]["name"] == "prism-time-after"
+        finally:
+            os.unlink(path)
+
+
 class TestBuildTimeEnvVars:
     """Tests for build_time_env_vars function."""
 
     def test_returns_tuple_of_tuples(self) -> None:
         """Returns correct format for env vars."""
-        result = build_time_env_vars(1000.0, 60)
+        result = build_time_env_vars(1000.0, 60, "claude", "/tmp/test.log")
 
         assert isinstance(result, tuple)
         assert all(isinstance(item, tuple) for item in result)
         assert all(len(item) == 2 for item in result)
 
-    def test_contains_required_vars(self) -> None:
-        """Contains both required environment variables."""
-        result = build_time_env_vars(1234.5, 90)
+    def test_contains_all_required_vars(self) -> None:
+        """Contains all four required environment variables."""
+        result = build_time_env_vars(1234.5, 90, "gemini", "/tmp/hook.log")
         result_dict = dict(result)
 
         assert "PRISM_START_TIME" in result_dict
-        assert "PRISM_VISIBLE_TIMEOUT" in result_dict
+        assert "PRISM_TOOL_TIMEOUT" in result_dict
+        assert "PRISM_HOOK_FORMAT" in result_dict
+        assert "PRISM_HOOK_LOG" in result_dict
 
-    def test_start_time_value(self) -> None:
-        """Start time is correctly formatted."""
-        result = build_time_env_vars(1706900000.123, 60)
+    def test_values(self) -> None:
+        """Values are correctly formatted."""
+        result = build_time_env_vars(1706900000.123, 120, "claude", "/tmp/h.log")
         result_dict = dict(result)
 
         assert result_dict["PRISM_START_TIME"] == "1706900000.123"
-
-    def test_visible_timeout_value(self) -> None:
-        """Visible timeout is correctly formatted."""
-        result = build_time_env_vars(1000.0, 120)
-        result_dict = dict(result)
-
-        assert result_dict["PRISM_VISIBLE_TIMEOUT"] == "120"
+        assert result_dict["PRISM_TOOL_TIMEOUT"] == "120"
+        assert result_dict["PRISM_HOOK_FORMAT"] == "claude"
+        assert result_dict["PRISM_HOOK_LOG"] == "/tmp/h.log"
 
 
-class TestTimeTrackerScript:
-    """Tests for the time_tracker.py hook script."""
+class TestTimeHookScript:
+    """Tests for the time_hook.py hook script."""
 
     @pytest.fixture
-    def run_hook(self):
+    def run_hook(self, tmp_path):
         """Fixture to run the hook script with given env vars."""
+        log_file = str(tmp_path / "hook.log")
 
         def _run(
             hook_type: str = "post",
             start_time: str | None = None,
-            visible_timeout: str | None = None,
+            tool_timeout: str | None = None,
+            hook_format: str = "claude",
         ) -> dict:
-            env = {}
+            env = {"PRISM_HOOK_FORMAT": hook_format, "PRISM_HOOK_LOG": log_file}
             if start_time is not None:
                 env["PRISM_START_TIME"] = start_time
-            if visible_timeout is not None:
-                env["PRISM_VISIBLE_TIMEOUT"] = visible_timeout
+            if tool_timeout is not None:
+                env["PRISM_TOOL_TIMEOUT"] = tool_timeout
 
             result = subprocess.run(
                 [sys.executable, str(HOOK_SCRIPT), hook_type],
@@ -126,153 +175,134 @@ class TestTimeTrackerScript:
 
         return _run
 
-    def test_missing_env_vars_returns_empty(self, run_hook) -> None:
-        """Script exits cleanly when env vars are missing."""
+    def test_missing_env_vars_claude(self, run_hook) -> None:
+        """Script exits cleanly when timing env vars are missing (Claude format)."""
         result = run_hook()
         assert result == {}
 
-    def test_normal_time_message(self, run_hook) -> None:
-        """Normal message when plenty of time remaining."""
-        import time
+    def test_missing_env_vars_gemini(self, run_hook) -> None:
+        """Script returns allow decision when timing vars missing (Gemini format)."""
+        result = run_hook(hook_format="gemini")
+        assert result == {"decision": "allow"}
 
-        start = time.time() - 30
-        result = run_hook(
-            start_time=str(start),
-            visible_timeout="60",
-        )
-
-        assert result["continue"] is True
-        assert "⏱️" in result["hookSpecificOutput"]["additionalContext"]
-        assert "30s" in result["hookSpecificOutput"]["additionalContext"]
-
-    def test_warning_time_message(self, run_hook) -> None:
-        """Warning message when 5-15 seconds remaining."""
-        import time
-
-        start = time.time() - 50
-        result = run_hook(
-            start_time=str(start),
-            visible_timeout="60",
-        )
-
-        assert result["continue"] is True
-        context = result["hookSpecificOutput"]["additionalContext"]
-        assert "⚠️" in context
-        assert "WRAP UP" in context
-
-    def test_critical_time_message(self, run_hook) -> None:
-        """Critical message when <5 seconds remaining."""
-        import time
-
-        start = time.time() - 57
-        result = run_hook(
-            start_time=str(start),
-            visible_timeout="60",
-        )
-
-        assert result["continue"] is True
-        context = result["hookSpecificOutput"]["additionalContext"]
-        assert "🚨" in context
-        assert "CRITICAL" in context
-
-    def test_no_negative_remaining(self, run_hook) -> None:
-        """Shows 0 seconds, not negative when over time."""
-        import time
-
-        start = time.time() - 100
-        result = run_hook(
-            start_time=str(start),
-            visible_timeout="60",
-        )
-
-        context = result["hookSpecificOutput"]["additionalContext"]
-        assert "0s left" in context or "Only 0s" in context
-        assert "-" not in context.split("Only")[1] if "Only" in context else True
-
-    def test_pre_hook_event_name(self, run_hook) -> None:
-        """Pre hook sets correct event name."""
+    def test_claude_pre_allow(self, run_hook) -> None:
+        """Claude pre hook allows when time remaining."""
         import time
 
         start = time.time() - 10
         result = run_hook(
             hook_type="pre",
             start_time=str(start),
-            visible_timeout="60",
+            tool_timeout="60",
         )
 
+        assert "hookSpecificOutput" in result
         assert result["hookSpecificOutput"]["hookEventName"] == "PreToolUse"
+        assert "remaining" in result["hookSpecificOutput"]["additionalContext"]
 
-    def test_post_hook_event_name(self, run_hook) -> None:
-        """Post hook sets correct event name."""
+    def test_claude_post_allow(self, run_hook) -> None:
+        """Claude post hook allows with time context."""
         import time
 
         start = time.time() - 10
         result = run_hook(
             hook_type="post",
             start_time=str(start),
-            visible_timeout="60",
+            tool_timeout="60",
         )
 
+        assert "hookSpecificOutput" in result
         assert result["hookSpecificOutput"]["hookEventName"] == "PostToolUse"
 
-    def test_valid_json_output(self, run_hook) -> None:
-        """Script outputs valid JSON."""
+    def test_claude_pre_block_expired(self, run_hook) -> None:
+        """Claude pre hook blocks when time expired."""
+        import time
+
+        start = time.time() - 100
+        result = run_hook(
+            hook_type="pre",
+            start_time=str(start),
+            tool_timeout="60",
+        )
+
+        assert "hookSpecificOutput" in result
+        output = result["hookSpecificOutput"]
+        assert output["permissionDecision"] == "deny"
+        assert "TIME EXPIRED" in output["permissionDecisionReason"]
+
+    def test_claude_low_time_warning(self, run_hook) -> None:
+        """Claude hook shows low time warning when <=10s remaining."""
+        import time
+
+        start = time.time() - 55
+        result = run_hook(
+            hook_type="post",
+            start_time=str(start),
+            tool_timeout="60",
+        )
+
+        context = result["hookSpecificOutput"]["additionalContext"]
+        assert "LOW TIME" in context
+
+    def test_gemini_pre_allow(self, run_hook) -> None:
+        """Gemini pre hook allows when time remaining."""
         import time
 
         start = time.time() - 10
         result = run_hook(
+            hook_type="pre",
             start_time=str(start),
-            visible_timeout="60",
+            tool_timeout="60",
+            hook_format="gemini",
         )
 
-        assert "continue" in result
-        assert "hookSpecificOutput" in result
-        assert "hookEventName" in result["hookSpecificOutput"]
-        assert "additionalContext" in result["hookSpecificOutput"]
+        assert result["decision"] == "allow"
+        assert "remaining" in result["hookSpecificOutput"]["additionalContext"]
 
+    def test_gemini_pre_block_expired(self, run_hook) -> None:
+        """Gemini pre hook blocks when time expired."""
+        import time
 
-class TestGetTimeMessage:
-    """Tests for the get_time_message function in the hook script."""
+        start = time.time() - 100
+        result = run_hook(
+            hook_type="pre",
+            start_time=str(start),
+            tool_timeout="60",
+            hook_format="gemini",
+        )
 
-    @pytest.fixture
-    def get_time_message(self):
-        """Import the function from the hook script."""
-        import importlib.util
+        assert result["decision"] == "block"
+        assert "TIME EXPIRED" in result["reason"]
 
-        spec = importlib.util.spec_from_file_location("time_tracker", HOOK_SCRIPT)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        return module.get_time_message
+    def test_gemini_post_allow(self, run_hook) -> None:
+        """Gemini post hook always allows with time context."""
+        import time
 
-    def test_normal_range(self, get_time_message) -> None:
-        """Normal message for >15s remaining."""
-        msg = get_time_message(30, 60)
-        assert "⏱️" in msg
-        assert "30s" in msg
+        start = time.time() - 100
+        result = run_hook(
+            hook_type="post",
+            start_time=str(start),
+            tool_timeout="60",
+            hook_format="gemini",
+        )
 
-    def test_warning_range_15s(self, get_time_message) -> None:
-        """Warning at exactly 15s remaining."""
-        msg = get_time_message(45, 60)
-        assert "⚠️" in msg
+        assert result["decision"] == "allow"
 
-    def test_warning_range_6s(self, get_time_message) -> None:
-        """Warning at 6s remaining."""
-        msg = get_time_message(54, 60)
-        assert "⚠️" in msg
+    def test_hook_log_written(self, run_hook, tmp_path) -> None:
+        """Hook writes to log file."""
+        import time
 
-    def test_critical_range_5s(self, get_time_message) -> None:
-        """Critical at exactly 5s remaining."""
-        msg = get_time_message(55, 60)
-        assert "🚨" in msg
+        log_file = tmp_path / "hook.log"
+        start = time.time() - 10
+        run_hook(
+            hook_type="pre",
+            start_time=str(start),
+            tool_timeout="60",
+        )
 
-    def test_critical_range_0s(self, get_time_message) -> None:
-        """Critical at 0s remaining."""
-        msg = get_time_message(60, 60)
-        assert "🚨" in msg
-        assert "0s" in msg
-
-    def test_clamps_negative_to_zero(self, get_time_message) -> None:
-        """Remaining time is clamped to 0, not negative."""
-        msg = get_time_message(100, 60)
-        assert "0s" in msg
-        assert "-" not in msg
+        assert log_file.exists()
+        lines = log_file.read_text().strip().splitlines()
+        assert len(lines) >= 1
+        entry = json.loads(lines[0])
+        assert entry["hook"] == "pre"
+        assert entry["decision"] == "allow"

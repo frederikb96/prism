@@ -91,6 +91,27 @@ def _get_env_override(prefix: str, config: dict[str, Any]) -> None:
                     config[key] = env_value
 
 
+def _resolve_config_path() -> Path:
+    """Resolve the default config path, checking env override and local fallback."""
+    env_path = os.environ.get("PRISM_CONFIG_PATH")
+    if env_path:
+        path = Path(env_path)
+        if path.exists():
+            return path
+        raise FileNotFoundError(f"Config not found at PRISM_CONFIG_PATH={env_path}")
+
+    if DEFAULT_CONFIG_PATH.exists():
+        return DEFAULT_CONFIG_PATH
+
+    local_config = Path(__file__).parent.parent.parent.parent / "config" / "config.yaml"
+    if local_config.exists():
+        return local_config
+
+    raise FileNotFoundError(
+        f"Config not found at {DEFAULT_CONFIG_PATH} or {local_config}"
+    )
+
+
 def _load_config() -> dict[str, Any]:
     """
     Load and merge configuration from files and environment.
@@ -100,18 +121,9 @@ def _load_config() -> dict[str, Any]:
         2. Merge override config (prism.yaml) if exists
         3. Apply environment variable overrides
     """
-    if DEFAULT_CONFIG_PATH.exists():
-        with open(DEFAULT_CONFIG_PATH) as f:
-            config: dict[str, Any] = yaml.safe_load(f) or {}
-    else:
-        local_config = Path(__file__).parent.parent.parent.parent / "config" / "config.yaml"
-        if local_config.exists():
-            with open(local_config) as f:
-                config = yaml.safe_load(f) or {}
-        else:
-            raise FileNotFoundError(
-                f"Config not found at {DEFAULT_CONFIG_PATH} or {local_config}"
-            )
+    config_path = _resolve_config_path()
+    with open(config_path) as f:
+        config: dict[str, Any] = yaml.safe_load(f) or {}
 
     if OVERRIDE_CONFIG_PATH.exists():
         with open(OVERRIDE_CONFIG_PATH) as f:
@@ -155,11 +167,35 @@ class SearchConfig:
 
 @dataclass
 class LevelConfig:
-    """Timeout configuration for a search level."""
+    """Timeout and allocation configuration for a search level."""
 
-    manager_timeout_seconds: int
     worker_timeout_seconds: int
     worker_visible_timeout: int
+    agent_allocation: dict[str, int] | None = None
+
+
+@dataclass
+class ModelConfig:
+    """Model configuration for a specific level."""
+
+    model: str
+    effort: str | None = None
+
+
+@dataclass
+class ModelsConfig:
+    """Per-level model configuration for all agent types."""
+
+    session_manager: dict[int, ModelConfig]
+    claude_workers: dict[int, ModelConfig]
+    gemini_workers: dict[int, ModelConfig]
+
+
+@dataclass
+class Level0Config:
+    """Level 0 specific configuration."""
+
+    default_providers: list[str]
 
 
 @dataclass
@@ -181,14 +217,6 @@ class RetryConfig:
         """
         delay = self.base_delay_seconds * (self.exponential_base**attempt)
         return min(delay, self.max_delay_seconds)
-
-
-@dataclass
-class WorkerConfig:
-    """Configuration for a worker agent."""
-
-    model: str
-    default_timeout_seconds: int
 
 
 @dataclass
@@ -216,24 +244,6 @@ class ProcessConfig:
 
 
 @dataclass
-class SynthesizerConfig:
-    """Result synthesizer configuration."""
-
-    model: str
-    default_timeout_seconds: int
-
-
-@dataclass
-class WorkersConfig:
-    """All worker configurations."""
-
-    perplexity: WorkerConfig
-    tavily: WorkerConfig
-    researcher: WorkerConfig
-    manager: WorkerConfig
-
-
-@dataclass
 class PrismConfig:
     """
     Main configuration container.
@@ -247,15 +257,30 @@ class PrismConfig:
     server: ServerConfig
     search: SearchConfig
     levels: dict[int, LevelConfig]
+    models: ModelsConfig
+    level0: Level0Config
     retry: RetryConfig
     process: ProcessConfig
-    synthesizer: SynthesizerConfig
-    workers: WorkersConfig
     database: DatabaseConfig
     retention: RetentionConfig
 
 
 _config_instance: PrismConfig | None = None
+
+
+def _parse_model_configs(
+    models_cfg: dict[str, Any], section: str
+) -> dict[int, ModelConfig]:
+    """Parse a models sub-section into a dict of level -> ModelConfig."""
+    result: dict[int, ModelConfig] = {}
+    for level_key, model_data in models_cfg.items():
+        level_num = int(level_key)
+        model_path = f"models.{section}.{level_key}.model"
+        result[level_num] = ModelConfig(
+            model=_require(model_data, "model", model_path),
+            effort=model_data.get("effort"),
+        )
+    return result
 
 
 def get_config() -> PrismConfig:
@@ -275,29 +300,31 @@ def get_config() -> PrismConfig:
         server_cfg = _require(cfg, "server", "server")
         search_cfg = _require(cfg, "search", "search")
         levels_cfg = _require(cfg, "levels", "levels")
+        models_cfg = _require(cfg, "models", "models")
+        level0_cfg = _require(cfg, "level0", "level0")
         retry_cfg = _require(cfg, "retry", "retry")
         process_cfg = _require(cfg, "process", "process")
-        synthesizer_cfg = _require(cfg, "synthesizer", "synthesizer")
-        workers_cfg = _require(cfg, "workers", "workers")
         database_cfg = _require(cfg, "database", "database")
         retention_cfg = _require(cfg, "retention", "retention")
 
         levels: dict[int, LevelConfig] = {}
         for level_key, level_data in levels_cfg.items():
             level_num = int(level_key)
-            mgr_path = f"levels.{level_key}.manager_timeout_seconds"
             wrk_path = f"levels.{level_key}.worker_timeout_seconds"
             vis_path = f"levels.{level_key}.worker_visible_timeout"
+            raw_alloc = level_data.get("agent_allocation")
+            agent_allocation: dict[str, int] | None = None
+            if isinstance(raw_alloc, dict):
+                agent_allocation = {str(k): int(v) for k, v in raw_alloc.items()}
             levels[level_num] = LevelConfig(
-                manager_timeout_seconds=_require(level_data, "manager_timeout_seconds", mgr_path),
                 worker_timeout_seconds=_require(level_data, "worker_timeout_seconds", wrk_path),
                 worker_visible_timeout=_require(level_data, "worker_visible_timeout", vis_path),
+                agent_allocation=agent_allocation,
             )
 
-        perplexity_cfg = _require(workers_cfg, "perplexity", "workers.perplexity")
-        tavily_cfg = _require(workers_cfg, "tavily", "workers.tavily")
-        researcher_cfg = _require(workers_cfg, "researcher", "workers.researcher")
-        manager_cfg = _require(workers_cfg, "manager", "workers.manager")
+        sm_cfg = _require(models_cfg, "session_manager", "models.session_manager")
+        cw_cfg = _require(models_cfg, "claude_workers", "models.claude_workers")
+        gw_cfg = _require(models_cfg, "gemini_workers", "models.gemini_workers")
 
         _config_instance = PrismConfig(
             server=ServerConfig(
@@ -311,6 +338,16 @@ def get_config() -> PrismConfig:
                 ),
             ),
             levels=levels,
+            models=ModelsConfig(
+                session_manager=_parse_model_configs(sm_cfg, "session_manager"),
+                claude_workers=_parse_model_configs(cw_cfg, "claude_workers"),
+                gemini_workers=_parse_model_configs(gw_cfg, "gemini_workers"),
+            ),
+            level0=Level0Config(
+                default_providers=_require(
+                    level0_cfg, "default_providers", "level0.default_providers"
+                ),
+            ),
             retry=RetryConfig(
                 max_transient_retries=_require(
                     retry_cfg, "max_transient_retries", "retry.max_transient_retries"
@@ -334,43 +371,6 @@ def get_config() -> PrismConfig:
                 ),
                 sigkill_timeout_seconds=_require(
                     process_cfg, "sigkill_timeout_seconds", "process.sigkill_timeout_seconds"
-                ),
-            ),
-            synthesizer=SynthesizerConfig(
-                model=_require(synthesizer_cfg, "model", "synthesizer.model"),
-                default_timeout_seconds=_require(
-                    synthesizer_cfg, "default_timeout_seconds",
-                    "synthesizer.default_timeout_seconds",
-                ),
-            ),
-            workers=WorkersConfig(
-                perplexity=WorkerConfig(
-                    model=_require(perplexity_cfg, "model", "workers.perplexity.model"),
-                    default_timeout_seconds=_require(
-                        perplexity_cfg, "default_timeout_seconds",
-                        "workers.perplexity.default_timeout_seconds",
-                    ),
-                ),
-                tavily=WorkerConfig(
-                    model=_require(tavily_cfg, "model", "workers.tavily.model"),
-                    default_timeout_seconds=_require(
-                        tavily_cfg, "default_timeout_seconds",
-                        "workers.tavily.default_timeout_seconds",
-                    ),
-                ),
-                researcher=WorkerConfig(
-                    model=_require(researcher_cfg, "model", "workers.researcher.model"),
-                    default_timeout_seconds=_require(
-                        researcher_cfg, "default_timeout_seconds",
-                        "workers.researcher.default_timeout_seconds",
-                    ),
-                ),
-                manager=WorkerConfig(
-                    model=_require(manager_cfg, "model", "workers.manager.model"),
-                    default_timeout_seconds=_require(
-                        manager_cfg, "default_timeout_seconds",
-                        "workers.manager.default_timeout_seconds",
-                    ),
                 ),
             ),
             database=DatabaseConfig(

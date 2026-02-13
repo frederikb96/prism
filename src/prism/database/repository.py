@@ -122,6 +122,7 @@ class SearchSessionRepository:
     async def update(
         self,
         session_id: uuid.UUID,
+        user_id: str | None = None,
         *,
         status: SessionStatus | None = None,
         claude_session_id: str | None = None,
@@ -136,6 +137,7 @@ class SearchSessionRepository:
 
         Args:
             session_id: Session to update
+            user_id: User identifier (for access control scoping)
             status: New status
             claude_session_id: Claude CLI session ID
             summary: Agent-generated summary
@@ -167,11 +169,19 @@ class SearchSessionRepository:
             return True
 
         async with self._db.session() as db_session:
-            stmt = (
-                update(SearchSession)
-                .where(SearchSession.id == session_id)
-                .values(**values)
-            )
+            where_clause = SearchSession.id == session_id
+            if user_id is not None:
+                stmt = (
+                    update(SearchSession)
+                    .where(where_clause, SearchSession.user_id == user_id)
+                    .values(**values)
+                )
+            else:
+                stmt = (
+                    update(SearchSession)
+                    .where(where_clause)
+                    .values(**values)
+                )
             result_proxy = await db_session.execute(stmt)
             return bool(result_proxy.rowcount > 0)  # type: ignore[attr-defined]
 

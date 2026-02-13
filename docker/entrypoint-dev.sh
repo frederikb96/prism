@@ -1,9 +1,9 @@
 #!/bin/bash
 set -e
 
-# Install package in editable mode (source is mounted)
+# Refresh editable link to mounted source (deps already in image)
 cd /app
-uv pip install --system -e ".[dev]" 2>/dev/null || pip install -e ".[dev]"
+uv pip install --system --no-deps -e .
 
-# Run the server
-exec python -m prism "$@"
+# Drop to appuser and run the server
+exec gosu appuser python -m prism "$@"
