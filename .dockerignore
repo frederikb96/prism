@@ -1,0 +1,41 @@
+# Version control
+.git/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+
+# Testing
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE and tooling
+.idea/
+.vscode/
+*.swp
+*.swo
+.mypy_cache/
+.ruff_cache/
+.uv/
+
+# Project metadata not needed in image
+.claude/
+.config-local
+.archive/
+.github/
+CHANGELOG.md
+LICENSE
+renovate.json
+docker-compose*.yaml
+uv.lock
+
+# OS
+.DS_Store
+Thumbs.db

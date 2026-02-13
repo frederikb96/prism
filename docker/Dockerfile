@@ -6,16 +6,13 @@
 # =============================================================================
 FROM python:3.13-slim AS base
 
-# Install system dependencies and Node.js for npx (Tavily MCP)
+# Install system dependencies, Node.js, and gosu in a single layer
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     gnupg \
+    gosu \
     && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install gosu for entrypoint user switching (both dev and prod)
-RUN apt-get update && apt-get install -y --no-install-recommends gosu \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Gemini CLI for workers
@@ -69,15 +66,22 @@ ENTRYPOINT ["/entrypoint.sh"]
 # =============================================================================
 FROM base AS prod
 
-# Copy source code and Alembic config
-COPY pyproject.toml README.md alembic.ini ./
+# Layer 1: Install dependencies only (cached when pyproject.toml unchanged)
+COPY pyproject.toml ./
+RUN mkdir -p src/prism && touch src/prism/__init__.py \
+    && echo "# stub" > README.md \
+    && uv pip install --system --no-cache-dir .
+
+# Layer 2: Copy actual source and non-Python assets
+COPY README.md ./
 COPY src/ ./src/
 COPY config/ ./config/
 COPY hooks/ ./hooks/
 COPY alembic/ ./alembic/
+COPY alembic.ini ./
 
-# Install package
-RUN uv pip install --system --no-cache-dir . \
+# Layer 3: Reinstall package without deps (fast — just re-links entry points)
+RUN uv pip install --system --no-cache-dir --no-deps . \
     && chmod +x /app/hooks/*.py
 
 # Create mount target directories
