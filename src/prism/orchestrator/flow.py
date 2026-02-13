@@ -81,20 +81,20 @@ class SearchFlow:
         dispatcher: WorkerDispatcher,
         session_registry: SessionRegistry,
         session_repository: SearchSessionRepository,
-        user_id: str,
     ) -> None:
         self._retry_executor = retry_executor
         self._gemini_executor = gemini_executor
         self._dispatcher = dispatcher
         self._session_registry = session_registry
         self._session_repository = session_repository
-        self._user_id = user_id
 
     async def execute_search(
         self,
         query: str,
         level: int = 0,
         providers: list[str] | None = None,
+        *,
+        user_id: str,
     ) -> SearchResult:
         """
         Execute a search at the specified level.
@@ -103,6 +103,7 @@ class SearchFlow:
             query: Search query
             level: Search depth (0-3)
             providers: L0 provider selection (None=config default, ["mix"]=all 4)
+            user_id: Requesting user's identifier
         """
         config = get_config()
 
@@ -144,7 +145,7 @@ class SearchFlow:
         )
 
         await self._session_repository.create(
-            user_id=self._user_id,
+            user_id=user_id,
             query=query,
             prompt=query,
             level=level,
@@ -153,7 +154,7 @@ class SearchFlow:
 
         await self._session_repository.update(
             session_uuid,
-            self._user_id,
+            user_id,
             status=SessionStatus.RUNNING,
         )
 
@@ -170,7 +171,7 @@ class SearchFlow:
 
             await self._session_repository.update(
                 session_uuid,
-                self._user_id,
+                user_id,
                 status=SessionStatus.COMPLETED if result.success else SessionStatus.FAILED,
                 result=result.to_dict(),
                 summary=self._extract_summary(result),
@@ -188,7 +189,7 @@ class SearchFlow:
 
             await self._session_repository.update(
                 session_uuid,
-                self._user_id,
+                user_id,
                 status=SessionStatus.FAILED,
                 error_message=str(e),
                 completed_at=datetime.now(timezone.utc),

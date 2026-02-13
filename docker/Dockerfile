@@ -59,9 +59,9 @@ RUN mkdir -p /home/appuser/.config/prism \
 
 # gosu already installed in base stage
 
-# Health check
+# Health check (TCP — transport-agnostic)
 HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
-    CMD curl -sf -o /dev/null --max-time 2 http://localhost:8765/ || test $? -eq 22
+    CMD bash -c 'echo > /dev/tcp/localhost/8765'
 
 # Entrypoint runs as root for pip install, then drops to appuser
 COPY docker/entrypoint-dev.sh /entrypoint.sh
@@ -93,8 +93,8 @@ RUN mkdir -p /home/appuser/.config/prism \
 COPY docker/entrypoint-prod.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-# Health check
+# Health check (TCP — transport-agnostic)
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-    CMD curl -sf -o /dev/null --max-time 2 http://localhost:8765/ || test $? -eq 22
+    CMD bash -c 'echo > /dev/tcp/localhost/8765'
 
 ENTRYPOINT ["/entrypoint.sh"]

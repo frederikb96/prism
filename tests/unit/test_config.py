@@ -26,7 +26,7 @@ class TestConfigLoading:
     def test_loads_server_config(self) -> None:
         config = get_config()
         assert config.server.port == 8765
-        assert config.server.transport == "sse"
+        assert config.server.transport == "streamable-http"
         assert config.server.log_level == "INFO"
 
     def test_loads_search_config(self) -> None:
@@ -217,7 +217,7 @@ class TestConfigErrors:
         config_file.write_text(textwrap.dedent("""\
             server:
               port: 8765
-              transport: sse
+              transport: streamable-http
               log_level: INFO
         """))
         os.environ["PRISM_CONFIG_PATH"] = str(config_file)
@@ -233,7 +233,7 @@ class TestConfigErrors:
         config_file.write_text(textwrap.dedent("""\
             server:
               port: 8765
-              transport: sse
+              transport: streamable-http
               log_level: INFO
             search:
               max_query_length: 10000

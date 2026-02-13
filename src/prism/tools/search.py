@@ -17,6 +17,8 @@ async def execute_search(
     query: str,
     level: int = 0,
     providers: list[str] | None = None,
+    *,
+    user_id: str,
 ) -> dict[str, Any]:
     """
     Execute search and return MCP-compatible response.
@@ -26,11 +28,14 @@ async def execute_search(
         query: Search query
         level: Search depth (0-3)
         providers: L0 provider selection (None=config default)
+        user_id: Requesting user's identifier
 
     Returns:
         Dictionary with search result
     """
-    result = await flow.execute_search(query=query, level=level, providers=providers)
+    result = await flow.execute_search(
+        query=query, level=level, providers=providers, user_id=user_id
+    )
     return result.to_dict()
 
 

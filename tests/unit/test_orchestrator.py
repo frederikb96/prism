@@ -49,7 +49,6 @@ def _make_search_flow(
         dispatcher=dispatcher or MagicMock(),
         session_registry=_make_session_registry(),
         session_repository=_make_session_repository(),
-        user_id="test-user",
     )
 
 
@@ -267,27 +266,27 @@ class TestSearchFlowValidation:
     @pytest.mark.asyncio
     async def test_invalid_level(self, mock_executor: MockExecutor) -> None:
         flow = _make_search_flow(mock_executor)
-        result = await flow.execute_search("query", level=5)
+        result = await flow.execute_search("query", level=5, user_id="test-user")
         assert result.success is False
         assert "Invalid level" in (result.error or "")
 
     @pytest.mark.asyncio
     async def test_negative_level(self, mock_executor: MockExecutor) -> None:
         flow = _make_search_flow(mock_executor)
-        result = await flow.execute_search("query", level=-1)
+        result = await flow.execute_search("query", level=-1, user_id="test-user")
         assert result.success is False
 
     @pytest.mark.asyncio
     async def test_empty_query(self, mock_executor: MockExecutor) -> None:
         flow = _make_search_flow(mock_executor)
-        result = await flow.execute_search("")
+        result = await flow.execute_search("", user_id="test-user")
         assert result.success is False
         assert "empty" in (result.error or "").lower()
 
     @pytest.mark.asyncio
     async def test_whitespace_query(self, mock_executor: MockExecutor) -> None:
         flow = _make_search_flow(mock_executor)
-        result = await flow.execute_search("   ")
+        result = await flow.execute_search("   ", user_id="test-user")
         assert result.success is False
 
     @pytest.mark.asyncio
@@ -302,7 +301,7 @@ class TestSearchFlowValidation:
             "prism.orchestrator.flow.create_worker",
             return_value=mock_worker,
         ):
-            result = await flow.execute_search("test query")
+            result = await flow.execute_search("test query", user_id="test-user")
             assert result.level == 0
 
 
@@ -326,7 +325,7 @@ class TestSearchFlowLevel0:
             "prism.orchestrator.flow.create_worker",
             return_value=mock_worker,
         ) as mock_factory:
-            result = await flow.execute_search("test query", level=0)
+            result = await flow.execute_search("test query", level=0, user_id="test-user")
 
             assert result.success is True
             assert result.content == "search result"
@@ -350,7 +349,7 @@ class TestSearchFlowLevel0:
             return_value=mock_worker,
         ):
             result = await flow.execute_search(
-                "test", level=0, providers=["tavily_search"]
+                "test", level=0, providers=["tavily_search"], user_id="test-user"
             )
 
             assert result.success is True
@@ -379,7 +378,7 @@ class TestSearchFlowLevel0:
             return_value=mock_worker,
         ):
             result = await flow.execute_search(
-                "test", level=0, providers=["claude_search", "tavily_search"]
+                "test", level=0, providers=["claude_search", "tavily_search"], user_id="test-user"
             )
 
             assert result.success is True
@@ -404,7 +403,7 @@ class TestSearchFlowLevel0:
             return_value=mock_worker,
         ) as mock_factory:
             result = await flow.execute_search(
-                "test", level=0, providers=["mix"]
+                "test", level=0, providers=["mix"], user_id="test-user"
             )
 
             assert result.success is True
@@ -420,7 +419,7 @@ class TestSearchFlowLevel0:
     ) -> None:
         flow = _make_search_flow(mock_executor)
         result = await flow.execute_search(
-            "test", level=0, providers=["nonexistent"]
+            "test", level=0, providers=["nonexistent"], user_id="test-user"
         )
         assert result.success is False
         assert "Unknown provider" in (result.error or "")
@@ -440,7 +439,7 @@ class TestSearchFlowLevel0:
             "prism.orchestrator.flow.create_worker",
             return_value=mock_worker,
         ):
-            result = await flow.execute_search("test", level=0)
+            result = await flow.execute_search("test", level=0, user_id="test-user")
             assert result.success is False
             assert "All providers failed" in (result.error or "")
 
@@ -468,7 +467,7 @@ class TestSearchFlowLevel0:
             return_value=mock_worker,
         ):
             result = await flow.execute_search(
-                "test", level=0, providers=["claude_search", "tavily_search"]
+                "test", level=0, providers=["claude_search", "tavily_search"], user_id="test-user"
             )
 
             assert result.success is True
@@ -490,7 +489,7 @@ class TestSearchFlowLevel0:
             "prism.orchestrator.flow.create_worker",
             return_value=mock_worker,
         ) as mock_factory:
-            await flow.execute_search("test", level=0)
+            await flow.execute_search("test", level=0, user_id="test-user")
             assert mock_factory.call_args.kwargs["level"] == 0
 
 
@@ -543,14 +542,13 @@ class TestSearchFlowLevel1_3:
             dispatcher=dispatcher,
             session_registry=_make_session_registry(),
             session_repository=_make_session_repository(),
-            user_id="test",
         )
 
         # Queue plan + synthesis results
         mock_executor.add_result(self._keyed_plan_output())
         mock_executor.add_result(self._synthesis_output())
 
-        result = await flow.execute_search("test query", level=1)
+        result = await flow.execute_search("test query", level=1, user_id="test-user")
 
         assert result.success is True
         # First call is plan — check timeout_seconds=None
@@ -576,13 +574,12 @@ class TestSearchFlowLevel1_3:
             dispatcher=dispatcher,
             session_registry=_make_session_registry(),
             session_repository=_make_session_repository(),
-            user_id="test",
         )
 
         mock_executor.add_result(self._keyed_plan_output("mgr-sess-id"))
         mock_executor.add_result(self._synthesis_output())
 
-        await flow.execute_search("test query", level=2)
+        await flow.execute_search("test query", level=2, user_id="test-user")
 
         # Second call is synthesis — check resume_session
         synth_req = mock_executor.calls[1][0]
@@ -608,7 +605,6 @@ class TestSearchFlowLevel1_3:
             dispatcher=dispatcher,
             session_registry=_make_session_registry(),
             session_repository=_make_session_repository(),
-            user_id="test",
         )
 
         # L3 allocation: claude=3, gemini=2, tavily=2, perplexity=1
@@ -631,7 +627,7 @@ class TestSearchFlowLevel1_3:
         )
         mock_executor.add_result(self._synthesis_output())
 
-        await flow.execute_search("test", level=3)
+        await flow.execute_search("test", level=3, user_id="test-user")
 
         dispatch_call = dispatcher.dispatch.call_args
         assert dispatch_call.kwargs["level"] == 3
@@ -650,12 +646,11 @@ class TestSearchFlowLevel1_3:
             dispatcher=MagicMock(),
             session_registry=_make_session_registry(),
             session_repository=_make_session_repository(),
-            user_id="test",
         )
 
         mock_executor.add_result(ExecutionResult.from_error("manager broke"))
 
-        result = await flow.execute_search("test", level=1)
+        result = await flow.execute_search("test", level=1, user_id="test-user")
 
         assert result.success is False
         assert "Manager planning failed" in (result.error or "")
@@ -679,12 +674,11 @@ class TestSearchFlowLevel1_3:
             dispatcher=dispatcher,
             session_registry=_make_session_registry(),
             session_repository=_make_session_repository(),
-            user_id="test",
         )
 
         mock_executor.add_result(self._keyed_plan_output())
 
-        result = await flow.execute_search("test", level=1)
+        result = await flow.execute_search("test", level=1, user_id="test-user")
 
         assert result.success is False
         assert "All workers failed" in (result.error or "")
@@ -711,13 +705,12 @@ class TestSearchFlowLevel1_3:
             dispatcher=dispatcher,
             session_registry=_make_session_registry(),
             session_repository=_make_session_repository(),
-            user_id="test",
         )
 
         mock_executor.add_result(self._keyed_plan_output())
         mock_executor.add_result(ExecutionResult.from_error("synthesis failed"))
 
-        result = await flow.execute_search("test", level=1)
+        result = await flow.execute_search("test", level=1, user_id="test-user")
 
         assert result.success is True
         assert result.metadata.get("fallback") is True
@@ -767,7 +760,6 @@ class TestSearchFlowDI:
             dispatcher=MagicMock(),
             session_registry=_make_session_registry(),
             session_repository=_make_session_repository(),
-            user_id="test",
         )
         assert flow._gemini_executor is gemini
 

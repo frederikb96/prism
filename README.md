@@ -70,18 +70,23 @@ See `config/config.yaml` for all settings.
 
 ## MCP Registration
 
-Add to Claude Desktop config (`~/.config/claude/claude_desktop_config.json`):
+Add to your MCP client config (e.g., `~/.claude.json` for Claude Code):
 
 ```json
 {
   "mcpServers": {
     "prism": {
-      "url": "http://localhost:8765/sse",
-      "transport": "sse"
+      "type": "http",
+      "url": "http://localhost:8765/mcp",
+      "headers": {
+        "X-User-Id": "your-username"
+      }
     }
   }
 }
 ```
+
+The `X-User-Id` header identifies the user for session scoping. Each user sees only their own sessions. Omitting the header defaults to `"default"`.
 
 ## API
 

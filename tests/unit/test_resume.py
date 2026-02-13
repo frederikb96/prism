@@ -48,7 +48,6 @@ def _make_search_flow(mock_executor: MockExecutor) -> SearchFlow:
         dispatcher=MagicMock(),
         session_registry=_make_session_registry(),
         session_repository=_make_session_repository(),
-        user_id="test-user",
     )
 
 
@@ -264,7 +263,7 @@ class TestServerResume:
         with (
             patch.object(server, "_session_repository", mock_repo),
             patch.object(server, "_search_flow", MagicMock()),
-            patch.object(server, "_user_id", "test-user"),
+            patch.object(server, "_resolve_user_id", return_value="test-user"),
         ):
             result_yaml = await server.resume.fn(
                 session_id=str(session.id),
@@ -288,7 +287,7 @@ class TestServerResume:
         with (
             patch.object(server, "_session_repository", mock_repo),
             patch.object(server, "_search_flow", MagicMock()),
-            patch.object(server, "_user_id", "test-user"),
+            patch.object(server, "_resolve_user_id", return_value="test-user"),
         ):
             result_yaml = await server.resume.fn(
                 session_id=str(session.id),
@@ -311,7 +310,7 @@ class TestServerResume:
         with (
             patch.object(server, "_session_repository", mock_repo),
             patch.object(server, "_search_flow", MagicMock()),
-            patch.object(server, "_user_id", "test-user"),
+            patch.object(server, "_resolve_user_id", return_value="test-user"),
         ):
             result_yaml = await server.resume.fn(
                 session_id=str(session.id),
@@ -334,7 +333,7 @@ class TestServerResume:
         with (
             patch.object(server, "_session_repository", mock_repo),
             patch.object(server, "_search_flow", MagicMock()),
-            patch.object(server, "_user_id", "test-user"),
+            patch.object(server, "_resolve_user_id", return_value="test-user"),
         ):
             result_yaml = await server.resume.fn(
                 session_id=session_id,
@@ -353,7 +352,7 @@ class TestServerResume:
         with (
             patch.object(server, "_session_repository", MagicMock()),
             patch.object(server, "_search_flow", MagicMock()),
-            patch.object(server, "_user_id", "test-user"),
+            patch.object(server, "_resolve_user_id", return_value="test-user"),
         ):
             result_yaml = await server.resume.fn(
                 session_id="not-a-uuid",
@@ -389,7 +388,7 @@ class TestServerResume:
             with (
                 patch.object(server, "_session_repository", mock_repo),
                 patch.object(server, "_search_flow", mock_flow),
-                patch.object(server, "_user_id", "test-user"),
+                patch.object(server, "_resolve_user_id", return_value="test-user"),
             ):
                 result_yaml = await server.resume.fn(
                     session_id=str(session.id),

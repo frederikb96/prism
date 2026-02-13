@@ -54,8 +54,8 @@ COMPOSE_FILE = PROJECT_ROOT / "docker-compose.dev.yaml"
 RESULTS_DIR = Path(__file__).parent / "results"
 CONTAINER_NAME = "prism-dev"
 
-# SSE endpoint (8766 host -> 8765 container)
-SSE_URL = "http://localhost:8766/sse"
+# Streamable HTTP endpoint (8766 host -> 8765 container)
+MCP_URL = "http://localhost:8766/mcp"
 
 # Per-test wall-clock timeouts (seconds)
 TIMEOUTS: dict[str, int] = {
@@ -211,8 +211,8 @@ class ContainerManager:
 class TestRunner:
     """Executes E2E tests against the Prism MCP server."""
 
-    def __init__(self, sse_url: str) -> None:
-        self.sse_url = sse_url
+    def __init__(self, mcp_url: str) -> None:
+        self.mcp_url = mcp_url
         self._l1_session_id: str | None = None
 
     def _parse_response(self, text: str) -> dict[str, Any]:
@@ -313,7 +313,7 @@ class TestRunner:
         start = time.time()
 
         try:
-            async with Client(self.sse_url) as client:
+            async with Client(self.mcp_url) as client:
                 # Start L1 search in background
                 search_task = asyncio.create_task(
                     client.call_tool(
@@ -398,7 +398,7 @@ class TestRunner:
             )
 
         try:
-            async with Client(self.sse_url) as client:
+            async with Client(self.mcp_url) as client:
                 raw = await asyncio.wait_for(
                     client.call_tool(
                         "resume",
@@ -462,7 +462,7 @@ class TestRunner:
         start = time.time()
 
         try:
-            async with Client(self.sse_url) as client:
+            async with Client(self.mcp_url) as client:
                 raw = await asyncio.wait_for(
                     client.call_tool("fetch", {"url": FETCH_URL}),
                     timeout=timeout,
@@ -537,7 +537,7 @@ class TestRunner:
             if providers is not None:
                 params["providers"] = providers
 
-            async with Client(self.sse_url) as client:
+            async with Client(self.mcp_url) as client:
                 raw = await asyncio.wait_for(
                     client.call_tool("search", params),
                     timeout=timeout,
@@ -599,7 +599,7 @@ class TestRunner:
         Falls back to the stored session_id if list_sessions fails.
         """
         try:
-            async with Client(self.sse_url) as client:
+            async with Client(self.mcp_url) as client:
                 raw = await asyncio.wait_for(
                     client.call_tool("list_sessions", {"limit": 10}),
                     timeout=10,
@@ -829,7 +829,7 @@ def _parse_args() -> argparse.Namespace:
 async def _cancel_all_searches() -> None:
     """Send cancel_all to the server to stop in-flight searches."""
     try:
-        async with Client(SSE_URL) as client:
+        async with Client(MCP_URL) as client:
             await asyncio.wait_for(
                 client.call_tool("cancel_all", {}),
                 timeout=5,
@@ -896,7 +896,7 @@ async def main() -> int:
     _print_header(tests)
 
     # Run tests
-    runner = TestRunner(SSE_URL)
+    runner = TestRunner(MCP_URL)
     results: list[TestResult] = []
 
     for test_name in tests:

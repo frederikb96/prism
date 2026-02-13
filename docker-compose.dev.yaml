@@ -44,7 +44,7 @@ services:
       - PRISM_SERVER_LOG_LEVEL=DEBUG
       - PRISM_DATABASE_URL=postgresql+asyncpg://prism:devpassword@postgres:5432/prism
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf -o /dev/null --max-time 2 http://localhost:8765/ || test $? -eq 22"]
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/8765'"]
       interval: 10s
       timeout: 3s
       retries: 3

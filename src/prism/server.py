@@ -7,13 +7,13 @@ FastMCP server with DI wiring for all components.
 from __future__ import annotations
 
 import logging
-import os
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, Any, AsyncIterator
 
 from fastmcp import FastMCP
+from fastmcp.server.dependencies import get_http_headers
 
 from prism.config import get_config
 from prism.core import ClaudeExecutor, GeminiExecutor, RetryExecutor, SessionRegistry
@@ -28,13 +28,13 @@ from prism.tools import execute_cancel, execute_fetch, execute_resume, execute_s
 
 logger = logging.getLogger(__name__)
 
+USER_ID_HEADER = "x-user-id"
 DEFAULT_USER_ID = "default"
 
 # Global singletons (initialized in lifespan)
 _session_registry: SessionRegistry | None = None
 _search_flow: SearchFlow | None = None
 _session_repository: SearchSessionRepository | None = None
-_user_id: str = DEFAULT_USER_ID
 
 
 def _get_session_registry() -> SessionRegistry:
@@ -58,9 +58,10 @@ def _get_session_repository() -> SearchSessionRepository:
     return _session_repository
 
 
-def _get_user_id() -> str:
-    """Get the configured user ID."""
-    return _user_id
+def _resolve_user_id() -> str:
+    """Extract user ID from request headers, falling back to default."""
+    headers = get_http_headers() or {}
+    return headers.get(USER_ID_HEADER) or DEFAULT_USER_ID
 
 
 @asynccontextmanager
@@ -70,14 +71,11 @@ async def lifespan(server: FastMCP) -> AsyncIterator[None]:
 
     Initializes all components via DI on startup.
     """
-    global _session_registry, _search_flow, _session_repository, _user_id
+    global _session_registry, _search_flow, _session_repository
 
     logger.info("Prism MCP server starting")
 
     config = get_config()
-
-    _user_id = os.environ.get("PRISM_USER_ID", DEFAULT_USER_ID)
-    logger.info("User ID configured", extra={"user_id": _user_id})
 
     # Initialize database
     db = await init_database(config.database)
@@ -102,7 +100,6 @@ async def lifespan(server: FastMCP) -> AsyncIterator[None]:
         dispatcher=dispatcher,
         session_registry=_session_registry,
         session_repository=_session_repository,
-        user_id=_user_id,
     )
 
     logger.info("Components initialized")
@@ -170,7 +167,10 @@ async def search(
     Returns human-readable YAML with content and metadata.
     """
     flow = _get_search_flow()
-    result = await execute_search(flow=flow, query=query, level=level, providers=providers)
+    user_id = _resolve_user_id()
+    result = await execute_search(
+        flow=flow, query=query, level=level, providers=providers, user_id=user_id
+    )
     return serialize_response(result)
 
 
@@ -231,7 +231,7 @@ async def get_session(
     Returns session metadata, status, and results if completed.
     """
     repo = _get_session_repository()
-    user_id = _get_user_id()
+    user_id = _resolve_user_id()
 
     try:
         session_uuid = uuid.UUID(session_id)
@@ -284,7 +284,7 @@ async def list_sessions(
     Returns newest sessions first. Use search parameter for fuzzy matching.
     """
     repo = _get_session_repository()
-    user_id = _get_user_id()
+    user_id = _resolve_user_id()
 
     limit = max(1, min(limit, 100))
     offset = max(0, offset)
@@ -334,7 +334,7 @@ async def resume(
     Level 0 sessions are not resumable.
     """
     repo = _get_session_repository()
-    user_id = _get_user_id()
+    user_id = _resolve_user_id()
     config = get_config()
 
     try:

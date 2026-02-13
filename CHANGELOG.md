@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- MCP transport migrated from SSE to Streamable HTTP (`streamable-http`)
+- Healthchecks standardized to TCP checks (transport-agnostic)
+- E2E tests updated to use Streamable HTTP client endpoint
+- Per-request user identification via `X-User-Id` HTTP header (replaces server-wide `PRISM_USER_ID` env var)
+- `SearchFlow` accepts `user_id` per-call instead of at construction time
+
 ### Added
 
 - Parent-child session tracking: `cancel(session_id)` now cascades to child worker processes
@@ -68,4 +76,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Dev environment: Podman Compose with hot-reload, /tmp data paths
 - Production environment: XDG-compliant paths, secrets file
 - Unit tests with async SQLite in-memory (112 tests)
-- E2E tests via FastMCP Client over SSE
+- E2E tests via FastMCP Client over Streamable HTTP
