@@ -9,13 +9,19 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# Base path for prompt files
 PROMPTS_DIR = Path(__file__).parent
+
+
+def current_datetime_line() -> str:
+    """Generate current date/time string for prompt injection."""
+    now = datetime.now(timezone.utc)
+    return f"Current date and time: {now.strftime('%Y-%m-%d, %H:%M')} UTC"
 
 
 @dataclass
@@ -231,6 +237,8 @@ class PromptRegistry:
             raise RuntimeError("User prompt template not found: user.md")
 
         return template.replace(
+            "{current_datetime}", current_datetime_line()
+        ).replace(
             "{query}", query
         ).replace("{timeout_seconds}", str(timeout_seconds))
 

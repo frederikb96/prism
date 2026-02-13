@@ -1,9 +1,10 @@
 """Tests for session resume feature.
 
 Covers:
-- SearchFlow.resume_session() success and failure paths
-- execute_resume() thin wrapper delegation
-- Server-level resume() validation (L0 rejection, expiry, missing claude_session_id)
+- SearchFlow.resume_session() (chat mode) success and failure paths
+- SearchFlow.resume_with_search() (search mode) success and failure paths
+- execute_resume() thin wrapper delegation with mode routing
+- Server-level resume() validation (L0 rejection, expiry, mode, missing claude_session_id)
 """
 
 from __future__ import annotations
@@ -17,9 +18,11 @@ import pytest
 import yaml
 
 from prism.core.response import ExecutionRequest, ExecutionResult
+from prism.core.retry import RetryExecutor
 from prism.database.models import SearchSession, SessionStatus
 from prism.orchestrator.flow import SearchFlow, SearchResult
 from prism.tools.search import execute_resume
+from prism.workers.base import AgentResult
 
 from .conftest import MockExecutor
 
@@ -41,11 +44,14 @@ def _make_session_repository() -> MagicMock:
     return repo
 
 
-def _make_search_flow(mock_executor: MockExecutor) -> SearchFlow:
+def _make_search_flow(
+    mock_executor: MockExecutor,
+    dispatcher: MagicMock | None = None,
+) -> SearchFlow:
     return SearchFlow(
         retry_executor=mock_executor,
         gemini_executor=MagicMock(),
-        dispatcher=MagicMock(),
+        dispatcher=dispatcher or MagicMock(),
         session_registry=_make_session_registry(),
         session_repository=_make_session_repository(),
     )
@@ -55,6 +61,26 @@ def _response_output(text: str, session_id: str | None = None) -> ExecutionResul
     """Create an ExecutionResult with the {"response": "..."} format."""
     return ExecutionResult.from_success(
         json.dumps({"type": "result", "structured_output": {"response": text}}),
+        session_id,
+    )
+
+
+def _keyed_plan_output(
+    session_id: str = "mgr-sess", level: int = 1
+) -> ExecutionResult:
+    """Create a successful manager plan result matching the given level's allocation."""
+    from prism.config import get_config
+
+    config = get_config()
+    allocation = config.levels[level].agent_allocation or {}
+
+    keyed_plan = {}
+    for agent_type, count in sorted(allocation.items()):
+        for i in range(1, count + 1):
+            keyed_plan[f"{agent_type}_{i}"] = f"follow-up query for {agent_type}_{i}"
+
+    return ExecutionResult.from_success(
+        json.dumps({"type": "result", "structured_output": keyed_plan}),
         session_id,
     )
 
@@ -83,8 +109,19 @@ def _make_db_session(
     return session
 
 
+def _retry_config(retries: int = 1):
+    from prism.config import RetryConfig
+    return RetryConfig(
+        max_transient_retries=retries,
+        max_validation_retries=retries,
+        base_delay_seconds=0.01,
+        max_delay_seconds=0.1,
+        exponential_base=2.0,
+    )
+
+
 # ---------------------------------------------------------------------------
-# SearchFlow.resume_session -- success
+# SearchFlow.resume_session -- chat mode success
 # ---------------------------------------------------------------------------
 
 class TestResumeSessionSuccess:
@@ -151,7 +188,7 @@ class TestResumeSessionSuccess:
 
 
 # ---------------------------------------------------------------------------
-# SearchFlow.resume_session -- failure
+# SearchFlow.resume_session -- chat mode failure
 # ---------------------------------------------------------------------------
 
 class TestResumeSessionFailure:
@@ -199,15 +236,227 @@ class TestResumeSessionFailure:
 
 
 # ---------------------------------------------------------------------------
-# execute_resume -- thin wrapper
+# SearchFlow.resume_with_search -- search mode success
+# ---------------------------------------------------------------------------
+
+class TestResumeWithSearchSuccess:
+    """Test SearchFlow.resume_with_search() success path."""
+
+    @pytest.mark.asyncio
+    async def test_resume_search_returns_synthesized_result(
+        self, mock_executor: MockExecutor
+    ) -> None:
+        """Full follow-up search returns synthesized SearchResult."""
+        retry_executor = RetryExecutor(mock_executor, _retry_config())
+
+        dispatcher = MagicMock()
+        dispatcher.dispatch = AsyncMock(
+            return_value=[AgentResult.from_success(content="worker data")]
+        )
+
+        flow = SearchFlow(
+            retry_executor=retry_executor,
+            gemini_executor=MagicMock(),
+            dispatcher=dispatcher,
+            session_registry=_make_session_registry(),
+            session_repository=_make_session_repository(),
+        )
+
+        mock_executor.add_result(_keyed_plan_output("resume-sess", level=2))
+        mock_executor.add_result(_response_output("synthesized follow-up", "synth-sess"))
+
+        result = await flow.resume_with_search(
+            claude_session_id="orig-claude-sess",
+            follow_up="What about Y?",
+            session_id="db-session-id",
+            level=2,
+        )
+
+        assert result.success is True
+        assert result.content == "synthesized follow-up"
+        assert result.metadata["resumed_from"] == "orig-claude-sess"
+
+    @pytest.mark.asyncio
+    async def test_resume_search_uses_resume_flag(
+        self, mock_executor: MockExecutor
+    ) -> None:
+        """Planning call uses --resume with the original Claude session ID."""
+        retry_executor = RetryExecutor(mock_executor, _retry_config())
+
+        dispatcher = MagicMock()
+        dispatcher.dispatch = AsyncMock(
+            return_value=[AgentResult.from_success(content="data")]
+        )
+
+        flow = SearchFlow(
+            retry_executor=retry_executor,
+            gemini_executor=MagicMock(),
+            dispatcher=dispatcher,
+            session_registry=_make_session_registry(),
+            session_repository=_make_session_repository(),
+        )
+
+        mock_executor.add_result(_keyed_plan_output("resume-sess"))
+        mock_executor.add_result(_response_output("ok"))
+
+        await flow.resume_with_search(
+            claude_session_id="orig-sess-id",
+            follow_up="follow up search",
+            session_id="db-id",
+            level=1,
+        )
+
+        req, _ = mock_executor.calls[0]
+        assert req.resume_session == "orig-sess-id"
+
+    @pytest.mark.asyncio
+    async def test_resume_search_dispatches_workers(
+        self, mock_executor: MockExecutor
+    ) -> None:
+        """Workers are dispatched with correct level."""
+        retry_executor = RetryExecutor(mock_executor, _retry_config())
+
+        dispatcher = MagicMock()
+        dispatcher.dispatch = AsyncMock(
+            return_value=[AgentResult.from_success(content="data")]
+        )
+
+        flow = SearchFlow(
+            retry_executor=retry_executor,
+            gemini_executor=MagicMock(),
+            dispatcher=dispatcher,
+            session_registry=_make_session_registry(),
+            session_repository=_make_session_repository(),
+        )
+
+        mock_executor.add_result(_keyed_plan_output(level=2))
+        mock_executor.add_result(_response_output("done"))
+
+        await flow.resume_with_search(
+            claude_session_id="sess",
+            follow_up="q",
+            session_id="db",
+            level=2,
+        )
+
+        dispatch_call = dispatcher.dispatch.call_args
+        assert dispatch_call.kwargs["level"] == 2
+
+
+# ---------------------------------------------------------------------------
+# SearchFlow.resume_with_search -- search mode failure
+# ---------------------------------------------------------------------------
+
+class TestResumeWithSearchFailure:
+    """Test SearchFlow.resume_with_search() failure paths."""
+
+    @pytest.mark.asyncio
+    async def test_planning_failure(self, mock_executor: MockExecutor) -> None:
+        """Planning failure returns error SearchResult."""
+        retry_executor = RetryExecutor(mock_executor, _retry_config(retries=0))
+
+        flow = SearchFlow(
+            retry_executor=retry_executor,
+            gemini_executor=MagicMock(),
+            dispatcher=MagicMock(),
+            session_registry=_make_session_registry(),
+            session_repository=_make_session_repository(),
+        )
+
+        mock_executor.add_result(ExecutionResult.from_error("planning broke"))
+
+        result = await flow.resume_with_search(
+            claude_session_id="sess",
+            follow_up="q",
+            session_id="db",
+            level=1,
+        )
+
+        assert result.success is False
+        assert "planning failed" in (result.error or "").lower()
+
+    @pytest.mark.asyncio
+    async def test_all_workers_fail(self, mock_executor: MockExecutor) -> None:
+        """All workers failing returns error."""
+        retry_executor = RetryExecutor(mock_executor, _retry_config())
+
+        dispatcher = MagicMock()
+        dispatcher.dispatch = AsyncMock(
+            return_value=[AgentResult.from_error(error="worker failed")]
+        )
+
+        flow = SearchFlow(
+            retry_executor=retry_executor,
+            gemini_executor=MagicMock(),
+            dispatcher=dispatcher,
+            session_registry=_make_session_registry(),
+            session_repository=_make_session_repository(),
+        )
+
+        mock_executor.add_result(_keyed_plan_output(level=2))
+
+        result = await flow.resume_with_search(
+            claude_session_id="sess",
+            follow_up="q",
+            session_id="db",
+            level=2,
+        )
+
+        assert result.success is False
+        assert "All workers failed" in (result.error or "")
+
+    @pytest.mark.asyncio
+    async def test_synthesis_failure_uses_fallback(
+        self, mock_executor: MockExecutor
+    ) -> None:
+        """When synthesis fails, fallback combines worker results."""
+        retry_executor = RetryExecutor(mock_executor, _retry_config())
+
+        dispatcher = MagicMock()
+        dispatcher.dispatch = AsyncMock(
+            return_value=[
+                AgentResult.from_success(content="worker 1 data"),
+                AgentResult.from_success(content="worker 2 data"),
+            ]
+        )
+
+        flow = SearchFlow(
+            retry_executor=retry_executor,
+            gemini_executor=MagicMock(),
+            dispatcher=dispatcher,
+            session_registry=_make_session_registry(),
+            session_repository=_make_session_repository(),
+        )
+
+        mock_executor.add_result(_keyed_plan_output())
+        mock_executor.add_result(ExecutionResult.from_error("synthesis failed"))
+
+        result = await flow.resume_with_search(
+            claude_session_id="sess",
+            follow_up="q",
+            session_id="db",
+            level=1,
+        )
+
+        assert result.success is True
+        assert result.metadata.get("fallback") is True
+        assert "worker 1 data" in result.content
+        assert "worker 2 data" in result.content
+        assert result.metadata["resumed_from"] == "sess"
+
+
+# ---------------------------------------------------------------------------
+# execute_resume -- thin wrapper with mode routing
 # ---------------------------------------------------------------------------
 
 class TestExecuteResume:
     """Test execute_resume() delegates to flow and returns dict."""
 
     @pytest.mark.asyncio
-    async def test_delegates_to_flow(self, mock_executor: MockExecutor) -> None:
-        """execute_resume calls flow.resume_session and returns to_dict()."""
+    async def test_chat_mode_delegates_to_resume_session(
+        self, mock_executor: MockExecutor
+    ) -> None:
+        """Chat mode calls flow.resume_session and returns to_dict()."""
         flow = _make_search_flow(mock_executor)
         mock_executor.add_result(_response_output("data"))
 
@@ -216,6 +465,60 @@ class TestExecuteResume:
             claude_session_id="claude-sess",
             follow_up="follow up",
             session_id="db-sess",
+            mode="chat",
+        )
+
+        assert isinstance(result, dict)
+        assert result["success"] is True
+
+    @pytest.mark.asyncio
+    async def test_chat_mode_is_default(
+        self, mock_executor: MockExecutor
+    ) -> None:
+        """Default mode is chat."""
+        flow = _make_search_flow(mock_executor)
+        mock_executor.add_result(_response_output("data"))
+
+        result = await execute_resume(
+            flow=flow,
+            claude_session_id="claude-sess",
+            follow_up="follow up",
+            session_id="db-sess",
+        )
+
+        assert isinstance(result, dict)
+        assert result["success"] is True
+
+    @pytest.mark.asyncio
+    async def test_search_mode_delegates_to_resume_with_search(
+        self, mock_executor: MockExecutor
+    ) -> None:
+        """Search mode calls flow.resume_with_search."""
+        retry_executor = RetryExecutor(mock_executor, _retry_config())
+
+        dispatcher = MagicMock()
+        dispatcher.dispatch = AsyncMock(
+            return_value=[AgentResult.from_success(content="data")]
+        )
+
+        flow = SearchFlow(
+            retry_executor=retry_executor,
+            gemini_executor=MagicMock(),
+            dispatcher=dispatcher,
+            session_registry=_make_session_registry(),
+            session_repository=_make_session_repository(),
+        )
+
+        mock_executor.add_result(_keyed_plan_output(level=2))
+        mock_executor.add_result(_response_output("search result"))
+
+        result = await execute_resume(
+            flow=flow,
+            claude_session_id="claude-sess",
+            follow_up="new search",
+            session_id="db-sess",
+            mode="search",
+            level=2,
         )
 
         assert isinstance(result, dict)
@@ -363,8 +666,28 @@ class TestServerResume:
         assert "Invalid session ID" in data["error"]
 
     @pytest.mark.asyncio
-    async def test_valid_session_delegates_to_flow(self) -> None:
-        """Valid resumable session delegates to execute_resume."""
+    async def test_invalid_mode_rejected(self) -> None:
+        """Invalid mode returns error before DB lookup."""
+        from prism import server
+
+        with (
+            patch.object(server, "_session_repository", MagicMock()),
+            patch.object(server, "_search_flow", MagicMock()),
+            patch.object(server, "_resolve_user_id", return_value="test-user"),
+        ):
+            result_yaml = await server.resume.fn(
+                session_id=str(uuid.uuid4()),
+                follow_up="follow up",
+                mode="invalid",
+            )
+
+        data = self._parse_yaml(result_yaml)
+        assert data["success"] is False
+        assert "Invalid mode" in data["error"]
+
+    @pytest.mark.asyncio
+    async def test_chat_mode_delegates_to_flow(self) -> None:
+        """Valid resumable session in chat mode delegates to execute_resume."""
         from prism import server
 
         session = _make_db_session(level=2, claude_session_id="claude-123")
@@ -399,6 +722,54 @@ class TestServerResume:
                 claude_session_id="claude-123",
                 follow_up="follow up",
                 session_id=str(session.id),
+                mode="chat",
+                level=2,
+            )
+
+        data = self._parse_yaml(result_yaml)
+        assert data["success"] is True
+
+    @pytest.mark.asyncio
+    async def test_search_mode_passes_mode_and_level(self) -> None:
+        """Search mode passes mode='search' and session.level to execute_resume."""
+        from prism import server
+
+        session = _make_db_session(level=3, claude_session_id="claude-456")
+        mock_repo = MagicMock()
+        mock_repo.get = AsyncMock(return_value=session)
+
+        mock_flow = MagicMock()
+        mock_resume_result = SearchResult(
+            success=True,
+            content="search result",
+            session_id=str(session.id),
+            query="new search",
+            level=3,
+            metadata={"resumed_from": "claude-456"},
+        )
+        with patch(
+            "prism.server.execute_resume",
+            new_callable=AsyncMock,
+            return_value=mock_resume_result.to_dict(),
+        ) as mock_exec_resume:
+            with (
+                patch.object(server, "_session_repository", mock_repo),
+                patch.object(server, "_search_flow", mock_flow),
+                patch.object(server, "_resolve_user_id", return_value="test-user"),
+            ):
+                result_yaml = await server.resume.fn(
+                    session_id=str(session.id),
+                    follow_up="new search",
+                    mode="search",
+                )
+
+            mock_exec_resume.assert_called_once_with(
+                flow=mock_flow,
+                claude_session_id="claude-456",
+                follow_up="new search",
+                session_id=str(session.id),
+                mode="search",
+                level=3,
             )
 
         data = self._parse_yaml(result_yaml)

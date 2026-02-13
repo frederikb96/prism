@@ -137,7 +137,8 @@ mcp = FastMCP(
         "Tools:\n"
         "- search(query, level?, providers?): Execute search at specified depth\n"
         "- fetch(url): Extract content from a URL via Tavily (advanced extraction)\n"
-        "- resume(session_id): Resume a previous L1-L3 search\n"
+        "- resume(session_id, follow_up, mode?): Resume a previous L1-L3 search. "
+        'mode="chat" (default) discusses results, mode="search" launches new workers\n'
         "- get_session(session_id): Get session details\n"
         "- list_sessions(limit?, offset?, search?): List past sessions\n"
         "- cancel_all(): Cancel all running searches for the current user"
@@ -317,13 +318,30 @@ async def list_sessions(
 async def resume(
     session_id: Annotated[str, "Session UUID to resume"],
     follow_up: Annotated[str, "Follow-up question or instruction"],
+    mode: Annotated[
+        str,
+        'Resume mode: "chat" (default) to discuss existing results without new searches, '
+        'or "search" to launch a full follow-up search with new workers using the '
+        "original session context.",
+    ] = "chat",
 ) -> str:
     """
-    Resume a previous L1-L3 search session with a follow-up query.
+    Resume a previous L1-L3 search session with a follow-up.
+
+    Two modes:
+    - chat: Discuss/ask about existing results (no new web searches)
+    - search: Launch a new orchestrated search informed by previous session context
 
     Only works for completed L1-L3 sessions within the retention period.
     Level 0 sessions are not resumable.
     """
+    valid_modes = ("chat", "search")
+    if mode not in valid_modes:
+        return serialize_response({
+            "success": False,
+            "error": f"Invalid mode: {mode!r}. Must be one of: {', '.join(valid_modes)}",
+        })
+
     repo = _get_session_repository()
     user_id = _resolve_user_id()
     config = get_config()
@@ -371,5 +389,7 @@ async def resume(
         claude_session_id=session.claude_session_id,
         follow_up=follow_up,
         session_id=str(session.id),
+        mode=mode,
+        level=session.level,
     )
     return serialize_response(result)

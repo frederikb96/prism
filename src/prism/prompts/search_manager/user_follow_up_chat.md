@@ -1,3 +1,5 @@
+{current_datetime}
+
 The user has a follow-up question. Answer using the context from previous search results.
 
 ## Question

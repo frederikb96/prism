@@ -44,6 +44,8 @@ async def execute_resume(
     claude_session_id: str,
     follow_up: str,
     session_id: str,
+    mode: str = "chat",
+    level: int = 0,
 ) -> dict[str, Any]:
     """
     Resume a previous session and return MCP-compatible response.
@@ -51,15 +53,25 @@ async def execute_resume(
     Args:
         flow: SearchFlow instance (injected)
         claude_session_id: Claude CLI session ID to resume
-        follow_up: Follow-up question
+        follow_up: Follow-up question or search query
         session_id: Our DB session ID
+        mode: "chat" for discussion, "search" for new search with workers
+        level: Original session level (used for search mode agent allocation)
 
     Returns:
         Dictionary with resume result
     """
-    result = await flow.resume_session(
-        claude_session_id=claude_session_id,
-        follow_up=follow_up,
-        session_id=session_id,
-    )
+    if mode == "search":
+        result = await flow.resume_with_search(
+            claude_session_id=claude_session_id,
+            follow_up=follow_up,
+            session_id=session_id,
+            level=level,
+        )
+    else:
+        result = await flow.resume_session(
+            claude_session_id=claude_session_id,
+            follow_up=follow_up,
+            session_id=session_id,
+        )
     return result.to_dict()

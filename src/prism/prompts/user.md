@@ -1,3 +1,5 @@
+{current_datetime}
+
 Follow your system instructions exactly for approach, tools, and time management.
 
 **Query:** {query}

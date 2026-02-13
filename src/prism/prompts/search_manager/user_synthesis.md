@@ -1,3 +1,5 @@
+{current_datetime}
+
 Your search agents have completed their tasks. Synthesize the findings into a response.
 
 ## Agent Results

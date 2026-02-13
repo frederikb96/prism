@@ -1,3 +1,5 @@
+{current_datetime}
+
 ## Search Query
 
 {query}

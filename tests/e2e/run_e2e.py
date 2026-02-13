@@ -60,6 +60,7 @@ MCP_URL = "http://localhost:8766/mcp"
 # Per-test wall-clock timeouts (seconds)
 TIMEOUTS: dict[str, int] = {
     "l0_default": 90,
+    "l0_gemini": 90,
     "l0_mix": 150,
     "l1": 300,
     "cancel": 30,
@@ -273,6 +274,16 @@ class TestRunner:
             query=L0_DEFAULT_QUERY,
             level=0,
             timeout=TIMEOUTS["l0_default"],
+        )
+
+    async def test_l0_gemini(self) -> TestResult:
+        """L0 search with gemini_search provider."""
+        return await self._run_search(
+            name="l0_gemini",
+            query=L0_DEFAULT_QUERY,
+            level=0,
+            timeout=TIMEOUTS["l0_gemini"],
+            providers=["gemini_search"],
         )
 
     async def test_l0_mix(self) -> TestResult:

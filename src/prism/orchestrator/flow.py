@@ -22,6 +22,7 @@ from prism.core.logging import log_manager_phase, log_worker_completion, parse_h
 from prism.database import SessionStatus
 from prism.workers import ManagerAgent
 from prism.workers.factory import VALID_AGENT_TYPES, create_worker
+from prism.workers.manager import Task, TaskPlan
 
 if TYPE_CHECKING:
     from prism.core.gemini import GeminiExecutor
@@ -181,7 +182,9 @@ class SearchFlow:
             else:
                 result = await self._execute_level_1_3(query, level, session_id)
 
-            duration_ms = int((time.monotonic() - start_time) * 1000)
+            total_time_s = round(time.monotonic() - start_time, 2)
+            duration_ms = int(total_time_s * 1000)
+            result.metadata["total_time_s"] = total_time_s
             completed_at = datetime.now(timezone.utc)
 
             await self._session_repository.update(
@@ -448,8 +451,6 @@ class SearchFlow:
                 error=f"Manager planning failed: {plan_result.error}",
             )
 
-        from prism.workers.manager import Task, TaskPlan
-
         if isinstance(plan_result.content, dict) and "tasks" in plan_result.content:
             tasks = [
                 Task(query=t["query"], agent_type=t["agent_type"], key=t.get("key", ""))
@@ -481,6 +482,33 @@ class SearchFlow:
             extra={"task_count": len(task_plan.tasks)},
         )
 
+        return await self._dispatch_and_synthesize(
+            manager=manager,
+            task_plan=task_plan,
+            session_id=session_id,
+            query=query,
+            level=level,
+            extra_metadata={"planning_time_s": plan_wall_time},
+        )
+
+    async def _dispatch_and_synthesize(
+        self,
+        manager: ManagerAgent,
+        task_plan: TaskPlan,
+        session_id: str,
+        query: str,
+        level: int,
+        extra_metadata: dict[str, Any] | None = None,
+    ) -> SearchResult:
+        """
+        Common dispatch + synthesis flow used by both initial and follow-up searches.
+
+        Takes a planned TaskPlan, dispatches workers, synthesizes results.
+        """
+        config = get_config()
+        level_config = config.levels[level]
+
+        dispatch_start = time.monotonic()
         worker_results = await self._dispatcher.dispatch(
             task_plan=task_plan,
             worker_timeout=level_config.worker_timeout_seconds,
@@ -488,6 +516,7 @@ class SearchFlow:
             level=level,
             parent_session_id=session_id,
         )
+        dispatch_wall_time = round(time.monotonic() - dispatch_start, 2)
 
         worker_details = _build_worker_details(worker_results)
         successful_count = sum(1 for w in worker_details if w["success"])
@@ -523,7 +552,11 @@ class SearchFlow:
         result_metadata: dict[str, Any] = {
             "task_count": len(task_plan.tasks),
             "workers": worker_details,
+            "dispatch_time_s": dispatch_wall_time,
+            "synthesis_time_s": synth_wall_time,
         }
+        if extra_metadata:
+            result_metadata.update(extra_metadata)
 
         if not synthesis_result.success:
             content = self._fallback_combine(worker_results)
@@ -608,6 +641,121 @@ class SearchFlow:
             session_id=session_id,
             query=follow_up,
             metadata={"resumed_from": claude_session_id},
+        )
+
+    async def resume_with_search(
+        self,
+        claude_session_id: str,
+        follow_up: str,
+        session_id: str,
+        level: int,
+    ) -> SearchResult:
+        """
+        Resume a previous L1-3 session with a new follow-up search.
+
+        Creates a new task plan via --resume, dispatches workers,
+        and synthesizes results — full orchestrated search with
+        the original session context preserved.
+
+        Args:
+            claude_session_id: Claude CLI session ID to resume
+            follow_up: Follow-up search query
+            session_id: Our DB session ID for tracking
+            level: Original search level (determines agent allocation)
+        """
+        config = get_config()
+        level_config = config.levels[level]
+        manager_model_cfg = config.models.session_manager[level]
+
+        if not level_config.agent_allocation:
+            return SearchResult(
+                success=False,
+                content="",
+                session_id=session_id,
+                query=follow_up,
+                error=f"No agent_allocation configured for level {level}",
+            )
+
+        logger.info(
+            "Resuming session with follow-up search",
+            extra={
+                "claude_session_id": claude_session_id,
+                "session_id": session_id,
+                "level": level,
+            },
+        )
+
+        manager = ManagerAgent(
+            executor=self._retry_executor,
+            model=manager_model_cfg.model,
+            agent_allocation=level_config.agent_allocation,
+            level=level,
+            session_id=claude_session_id,
+            parent_session_id=session_id,
+        )
+
+        plan_start = time.monotonic()
+        plan_result = await manager.follow_up_search(follow_up, timeout_seconds=None)
+        plan_wall_time = round(time.monotonic() - plan_start, 2)
+
+        log_manager_phase(
+            phase="follow_up_planning",
+            level=level,
+            wall_time_s=plan_wall_time,
+            session_id=manager.session_id,
+        )
+
+        if not plan_result.success:
+            return SearchResult(
+                success=False,
+                content="",
+                session_id=session_id,
+                level=level,
+                query=follow_up,
+                error=f"Follow-up search planning failed: {plan_result.error}",
+            )
+
+        if isinstance(plan_result.content, dict) and "tasks" in plan_result.content:
+            tasks = [
+                Task(query=t["query"], agent_type=t["agent_type"], key=t.get("key", ""))
+                for t in plan_result.content["tasks"]
+            ]
+            task_plan = TaskPlan(tasks=tasks)
+        else:
+            return SearchResult(
+                success=False,
+                content="",
+                session_id=session_id,
+                level=level,
+                query=follow_up,
+                error="Follow-up search returned invalid task plan",
+            )
+
+        if not task_plan.tasks:
+            return SearchResult(
+                success=False,
+                content="",
+                session_id=session_id,
+                level=level,
+                query=follow_up,
+                error="Follow-up search produced empty task plan",
+            )
+
+        logger.info(
+            "Follow-up task plan created",
+            extra={"task_count": len(task_plan.tasks)},
+        )
+
+        return await self._dispatch_and_synthesize(
+            manager=manager,
+            task_plan=task_plan,
+            session_id=session_id,
+            query=follow_up,
+            level=level,
+            extra_metadata={
+                "resumed_from": claude_session_id,
+                "planning_time_s": plan_wall_time,
+            },
         )
 
     def _fallback_combine(self, results: list) -> str:

@@ -25,4 +25,4 @@ RESUME_FOLLOW_UP = (
 FETCH_URL = "https://www.iana.org/help/example-domains"
 
 # Ordered test list
-ALL_TESTS = ["l0_default", "l0_mix", "l1", "cancel", "resume", "fetch"]
+ALL_TESTS = ["l0_default", "l0_gemini", "l0_mix", "l1", "cancel", "resume", "fetch"]

@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 from prism.core.logging import log_prompt
 from prism.core.response import ExecutionRequest
 from prism.prompts import get_registry
+from prism.prompts.registry import current_datetime_line
 
 if TYPE_CHECKING:
     from prism.core.retry import RetryExecutor
@@ -278,7 +279,8 @@ class ManagerAgent:
         if template is None:
             return AgentResult.from_error(error="Follow-up chat template not found")
 
-        user_prompt = template.replace("{follow_up}", follow_up)
+        user_prompt = template.replace("{current_datetime}", current_datetime_line())
+        user_prompt = user_prompt.replace("{follow_up}", follow_up)
 
         request = ExecutionRequest(
             prompt=user_prompt,
@@ -381,7 +383,8 @@ class ManagerAgent:
             "{agent_count}", str(agent_count)
         )
 
-        prompt = template.replace("{query}", query)
+        prompt = template.replace("{current_datetime}", current_datetime_line())
+        prompt = prompt.replace("{query}", query)
         prompt = prompt.replace("{agent_section}", agent_section)
         prompt = prompt.replace("{level_guidance}", level_guidance)
         prompt = prompt.replace("{schema_example}", schema_example)
@@ -398,7 +401,8 @@ class ManagerAgent:
             f"search_manager/levels/synthesis_l{self._level}"
         ) or ""
 
-        prompt = template.replace("{worker_results}", worker_results)
+        prompt = template.replace("{current_datetime}", current_datetime_line())
+        prompt = prompt.replace("{worker_results}", worker_results)
         prompt = prompt.replace("{level_guidance}", level_guidance.strip())
         return prompt
 
