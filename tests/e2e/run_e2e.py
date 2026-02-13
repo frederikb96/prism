@@ -16,7 +16,6 @@ Usage:
     uv run python tests/e2e/run_e2e.py                        # all tests
     uv run python tests/e2e/run_e2e.py --only l0_default,l1   # specific tests
     uv run python tests/e2e/run_e2e.py --skip cancel           # skip specific
-    uv run python tests/e2e/run_e2e.py --no-docker             # reuse running container
 """
 
 from __future__ import annotations
@@ -821,12 +820,6 @@ def _parse_args() -> argparse.Namespace:
         help="Comma-separated tests to run (only these)",
     )
 
-    parser.add_argument(
-        "--no-docker",
-        action="store_true",
-        help="Skip Podman setup (assumes container already running)",
-    )
-
     return parser.parse_args()
 
 
@@ -882,20 +875,19 @@ async def main() -> int:
         return 0
 
     # Container setup
-    if not args.no_docker:
-        container = ContainerManager(COMPOSE_FILE)
-        print("\nSetting up Podman environment...")
-        print("  Stopping existing containers...")
-        container.down()
-        print("  Cleaning temp volumes...")
-        container.clean_volumes()
-        print("  Starting containers...")
-        if not container.up():
-            return 1
-        print("  Waiting for health check...")
-        if not container.wait_healthy():
-            return 1
-        print("  Container ready")
+    container = ContainerManager(COMPOSE_FILE)
+    print("\nSetting up Podman environment...")
+    print("  Stopping existing containers...")
+    container.down()
+    print("  Cleaning temp volumes...")
+    container.clean_volumes()
+    print("  Starting containers...")
+    if not container.up():
+        return 1
+    print("  Waiting for health check...")
+    if not container.wait_healthy():
+        return 1
+    print("  Container ready")
 
     # Clean old result files
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -930,8 +922,7 @@ async def main() -> int:
     _print_summary(results, interrupted=_shutdown_requested)
 
     # Leave container alive for inspection
-    if not args.no_docker:
-        print("Container left running for inspection.\n")
+    print("Container left running for inspection.\n")
 
     if _shutdown_requested:
         return 130

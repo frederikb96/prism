@@ -119,7 +119,6 @@ uv run pytest tests/unit/ -v
 # E2E tests (manages full container lifecycle + requires API keys)
 uv run python tests/e2e/run_e2e.py                     # all tests
 uv run python tests/e2e/run_e2e.py --only l0_default,l1 # specific tests
-uv run python tests/e2e/run_e2e.py --no-docker          # reuse running container
 ```
 
 ### Database Migrations
