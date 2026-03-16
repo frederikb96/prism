@@ -326,6 +326,10 @@ def get_config() -> PrismConfig:
         cw_cfg = _require(models_cfg, "claude_workers", "models.claude_workers")
         gw_cfg = _require(models_cfg, "gemini_workers", "models.gemini_workers")
 
+        db_url = _require(database_cfg, "url", "database.url")
+        if db_url.startswith("postgresql://"):
+            db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+
         _config_instance = PrismConfig(
             server=ServerConfig(
                 port=_require(server_cfg, "port", "server.port"),
@@ -374,7 +378,7 @@ def get_config() -> PrismConfig:
                 ),
             ),
             database=DatabaseConfig(
-                url=_require(database_cfg, "url", "database.url"),
+                url=db_url,
                 pool_size=_require(database_cfg, "pool_size", "database.pool_size"),
                 max_overflow=_require(database_cfg, "max_overflow", "database.max_overflow"),
             ),
