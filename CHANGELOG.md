@@ -7,20 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-### Changed
-
-- `cancel_all()` now user-scoped via `X-User-Id` header (each user can only cancel their own sessions)
-- In-memory session tracking includes `user_id` (inherited from parent session for child workers)
-- Container volumes simplified: only persist PostgreSQL data and Claude CLI sessions (`~/.claude`)
-- Removed unused `~/.local/share/prism` and `~/.cache/prism` container mounts
-- MCP transport migrated from SSE to Streamable HTTP (`streamable-http`)
-- Healthchecks standardized to TCP checks (transport-agnostic)
-- E2E tests updated to use Streamable HTTP client endpoint
-- Per-request user identification via `X-User-Id` HTTP header (replaces server-wide `PRISM_USER_ID` env var)
-- `SearchFlow` accepts `user_id` per-call instead of at construction time
+## [0.2.0] - 2026-03-30
 
 ### Added
 
+- `.dev.env.example` and `.prod.env.example` secret templates
+- `config-custom/` directory for sparse YAML config overrides (gitignored)
+- `Makefile` with dev/prod compose shortcuts and quality check targets
 - Parent-child session tracking with cascading cancellation
 - Parallel `cancel_all()` via `asyncio.gather` (was sequential, could exceed Docker stop timeout)
 - `init: true` in both Docker Compose files for zombie process reaping
@@ -42,6 +35,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Compose secret injection migrated from `env_file:` to `--env-file` + `${VAR}` interpolation pattern
+- Compose commands wrapped in Makefile targets (`make dev`, `make prod`, `make check`)
+- `cancel_all()` now user-scoped via `X-User-Id` header (each user can only cancel their own sessions)
+- In-memory session tracking includes `user_id` (inherited from parent session for child workers)
+- Container volumes simplified: only persist PostgreSQL data and Claude CLI sessions (`~/.claude`)
+- Removed unused `~/.local/share/prism` and `~/.cache/prism` container mounts
+- MCP transport migrated from SSE to Streamable HTTP (`streamable-http`)
+- Healthchecks standardized to TCP checks (transport-agnostic)
+- E2E tests updated to use Streamable HTTP client endpoint
+- Per-request user identification via `X-User-Id` HTTP header (replaces server-wide `PRISM_USER_ID` env var)
+- `SearchFlow` accepts `user_id` per-call instead of at construction time
 - L0 default from direct Perplexity API to claude_search (configurable via `level0.default_providers`)
 - Workers unified: renamed to claude_search, tavily_search, perplexity_search, gemini_search
 - All 4 worker types available at every level (L0-L3), not just L1-3
