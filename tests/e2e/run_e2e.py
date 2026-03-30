@@ -50,6 +50,7 @@ from log_checker import TestLogs, parse_test_logs
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 COMPOSE_FILE = PROJECT_ROOT / "docker-compose.dev.yaml"
+ENV_FILE = PROJECT_ROOT / ".dev.env"
 RESULTS_DIR = Path(__file__).parent / "results"
 CONTAINER_NAME = "prism-dev"
 
@@ -147,13 +148,20 @@ class TestResult:
 class ContainerManager:
     """Manages Podman Compose lifecycle for E2E tests."""
 
-    def __init__(self, compose_file: Path) -> None:
+    def __init__(self, compose_file: Path, env_file: Path) -> None:
         self.compose_file = compose_file
+        self.env_file = env_file
+
+    def _compose_cmd(self, *args: str) -> list[str]:
+        """Build a podman compose command with --env-file and -f flags."""
+        cmd = ["podman", "compose", "--env-file", str(self.env_file), "-f", str(self.compose_file)]
+        cmd.extend(args)
+        return cmd
 
     def down(self) -> None:
         """Stop and remove containers."""
         subprocess.run(
-            ["podman", "compose", "-f", str(self.compose_file), "down", "-v"],
+            self._compose_cmd("down", "-v"),
             capture_output=True,
             check=False,
         )
@@ -166,7 +174,7 @@ class ContainerManager:
     def up(self) -> bool:
         """Start containers."""
         result = subprocess.run(
-            ["podman", "compose", "-f", str(self.compose_file), "up", "-d"],
+            self._compose_cmd("up", "-d"),
             capture_output=True,
             text=True,
         )
@@ -875,7 +883,7 @@ async def main() -> int:
         return 0
 
     # Container setup
-    container = ContainerManager(COMPOSE_FILE)
+    container = ContainerManager(COMPOSE_FILE, ENV_FILE)
     print("\nSetting up Podman environment...")
     print("  Stopping existing containers...")
     container.down()

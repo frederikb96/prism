@@ -20,53 +20,47 @@ All 4 worker types (claude_search, tavily_search, perplexity_search, gemini_sear
 ### Prerequisites
 
 - Podman with `podman compose`
-- API keys in `~/.config/prism/.env`:
-  ```bash
-  mkdir -p ~/.config/prism
-  cat > ~/.config/prism/.env << 'EOF'
-  CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-...
-  GOOGLE_API_KEY=AI...
-  PERPLEXITY_API_KEY=pplx-...
-  TAVILY_API_KEY=tvly-...
-  EOF
-  ```
+- API keys: copy `.dev.env.example` to `.dev.env` and fill in values. Keys already in your OS environment (e.g., via `~/.bashrc`) flow through automatically -- only add entries for keys not in your shell.
 
 ### Development
 
 ```bash
-# Start dev environment (PostgreSQL + Prism with hot-reload)
-podman compose -f docker-compose.dev.yaml up -d
-
-# Data lives in /tmp for easy cleanup:
-# /tmp/prism-postgres, /tmp/prism-claude
-
-# View logs
-podman logs prism-dev
-
-# Stop
-podman compose -f docker-compose.dev.yaml down
+cp .dev.env.example .dev.env    # fill in missing API keys
+make dev                         # start PostgreSQL + Prism with hot-reload
+make dev-logs                    # view logs
+make dev-down                    # stop
 ```
+
+Data lives in `/tmp` for easy cleanup: `/tmp/prism-postgres`, `/tmp/prism-claude`.
 
 ### Production
 
 ```bash
+cp .prod.env.example .prod.env  # fill in secrets
+
 # Create postgres password
 openssl rand -base64 32 > ~/.config/prism/postgres_password
 chmod 600 ~/.config/prism/postgres_password
 
-# Data: ~/.local/share/prism/postgres, ~/.local/share/prism/claude
-podman compose up -d
+make prod                        # start
 ```
+
+Data persists at `~/.local/share/prism/postgres` and `~/.local/share/prism/claude`.
 
 ## Configuration
 
-Config loads with priority: environment variables > `~/.config/prism/prism.yaml` > `config/config.yaml`
+All settings with defaults and comments live in `config/config.yaml` -- this file IS the config documentation.
 
-**Environment variable naming:** YAML paths joined with underscores, prefixed `PRISM_`:
-- `server.port` → `PRISM_SERVER_PORT`
-- `retry.max_transient_retries` → `PRISM_RETRY_MAX_TRANSIENT_RETRIES`
+**Loading chain** (highest priority wins):
+- `PRISM_SECTION_KEY` environment variables
+- Custom override YAML (`config-custom/`, sparse -- only values that differ)
+- `config/config.yaml` (defaults, always present in image)
 
-See `config/config.yaml` for all settings.
+**Env var naming:** YAML paths joined with underscores, prefixed `PRISM_`:
+- `server.port` --> `PRISM_SERVER_PORT`
+- `retry.max_transient_retries` --> `PRISM_RETRY_MAX_TRANSIENT_RETRIES`
+
+**Secrets** use environment variables injected via `--env-file` into compose. See `.prod.env.example` for required variables. Custom config overrides go in `config-custom/` (gitignored).
 
 ## MCP Registration
 

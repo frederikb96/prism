@@ -42,9 +42,13 @@ htmlcov/
 .uv/
 uv.lock
 
-# Local config (use ~/.config/prism/ instead)
+# Local config overrides
+config-custom/*.yaml
+.dev.env
+.prod.env
+
+# Legacy (pre-migration)
 config/local.yaml
-# symlink
 .config-local
 
 # Database files
