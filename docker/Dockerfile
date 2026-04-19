@@ -24,7 +24,7 @@ RUN useradd -m -u 1000 appuser
 # Install Claude CLI (binary goes to ~/.local/share/claude/, symlink at ~/.local/bin/claude)
 USER appuser
 # renovate: datasource=npm depName=@anthropic-ai/claude-code
-RUN curl -fsSL https://claude.ai/install.sh | bash -s 2.1.37
+RUN curl -fsSL https://claude.ai/install.sh | bash -s 2.1.75
 USER root
 
 ENV PATH="/home/appuser/.local/bin:${PATH}"
