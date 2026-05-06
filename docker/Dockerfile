@@ -16,7 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Gemini CLI for workers
-RUN npm install -g @google/gemini-cli@0.28.1
+RUN npm install -g @google/gemini-cli@0.39.1
 
 # Create non-root user for podman rootless compatibility
 RUN useradd -m -u 1000 appuser
