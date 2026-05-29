@@ -135,10 +135,10 @@ class TestModelsConfig:
         config = get_config()
         gw = config.models.gemini_workers
         assert set(gw.keys()) == {0, 1, 2, 3}
-        assert gw[0] == ModelConfig(model="gemini-3-flash-preview", effort=None)
-        assert gw[1] == ModelConfig(model="gemini-3-flash-preview", effort=None)
-        assert gw[2] == ModelConfig(model="gemini-3-pro-preview", effort=None)
-        assert gw[3] == ModelConfig(model="gemini-3-pro-preview", effort=None)
+        assert gw[0] == ModelConfig(model="gemini-3.5-flash", effort=None)
+        assert gw[1] == ModelConfig(model="gemini-3.5-flash", effort=None)
+        assert gw[2] == ModelConfig(model="gemini-3.1-pro-preview", effort=None)
+        assert gw[3] == ModelConfig(model="gemini-3.1-pro-preview", effort=None)
 
 
 class TestLevel0Config:

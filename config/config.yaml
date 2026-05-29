@@ -66,13 +66,13 @@ models:
       model: opus
   gemini_workers:
     0:
-      model: gemini-3-flash-preview
+      model: gemini-3.5-flash
     1:
-      model: gemini-3-flash-preview
+      model: gemini-3.5-flash
     2:
-      model: gemini-3-pro-preview
+      model: gemini-3.1-pro-preview
     3:
-      model: gemini-3-pro-preview
+      model: gemini-3.1-pro-preview
 
 level0:
   default_providers:

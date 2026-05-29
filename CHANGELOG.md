@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-05-29
+
+### Changed
+
+- Gemini worker models bumped after upstream deprecation: L0/L1 `gemini-3-flash-preview` → `gemini-3.5-flash` (GA), L2/L3 `gemini-3-pro-preview` (shut down 2026-03-09) → `gemini-3.1-pro-preview`
+
 ## [0.2.0] - 2026-03-30
 
 ### Added
