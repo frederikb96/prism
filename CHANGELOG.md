@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-05-29
+
+### Fixed
+
+- Cap `fastmcp` to `<3.0.0`: an unpinned resolve to fastmcp 3.x changed streamable-HTTP session handling and broke all tool calls with "Session not found"
+
 ## [0.2.1] - 2026-05-29
 
 ### Changed
