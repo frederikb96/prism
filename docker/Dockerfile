@@ -4,7 +4,7 @@
 # =============================================================================
 # Base stage: Common dependencies
 # =============================================================================
-FROM python:3.13-slim AS base
+FROM python:3.14-slim AS base
 
 # Install system dependencies, Node.js, and gosu in a single layer
 RUN apt-get update && apt-get install -y --no-install-recommends \
