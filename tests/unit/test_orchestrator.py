@@ -1,6 +1,6 @@
 """Tests for orchestrator: flow, dispatcher.
 
-Validates multi-provider L0, timeout=None for L1-3,
+Validates multi-provider L0, manager budgets for L1-3,
 factory-based dispatcher, manager-driven synthesis.
 """
 
@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from prism.config import get_config
 from prism.core.response import ExecutionResult
 from prism.core.retry import RetryExecutor
 from prism.orchestrator.dispatcher import WorkerDispatcher
@@ -528,10 +529,10 @@ class TestSearchFlowLevel1_3:
         )
 
     @pytest.mark.asyncio
-    async def test_l1_manager_called_with_timeout_none(
+    async def test_l1_manager_plan_is_bounded(
         self, mock_executor: MockExecutor
     ) -> None:
-        """Manager plan() is called with timeout_seconds=None."""
+        """Manager plan() is bounded by the level's manager budget."""
         retry_config = _retry_config()
         retry_executor = RetryExecutor(mock_executor, retry_config)
 
@@ -555,9 +556,9 @@ class TestSearchFlowLevel1_3:
         result = await flow.execute_search("test query", level=1, user_id="test-user")
 
         assert result.success is True
-        # First call is plan — check timeout_seconds=None
+        # First call is plan — bounded by the level's manager budget
         req = mock_executor.calls[0][0]
-        assert req.timeout_seconds is None
+        assert req.timeout_seconds == get_config().levels[1].manager_timeout_seconds
 
     @pytest.mark.asyncio
     async def test_l1_synthesize_uses_resume(
@@ -588,7 +589,7 @@ class TestSearchFlowLevel1_3:
         # Second call is synthesis — check resume_session
         synth_req = mock_executor.calls[1][0]
         assert synth_req.resume_session == "mgr-sess-id"
-        assert synth_req.timeout_seconds is None
+        assert synth_req.timeout_seconds == get_config().levels[2].manager_timeout_seconds
 
     @pytest.mark.asyncio
     async def test_l1_dispatcher_receives_level(

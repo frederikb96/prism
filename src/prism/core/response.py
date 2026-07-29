@@ -113,7 +113,10 @@ class ExecutionResult:
         "temporary",
         "unavailable",
         "rate limit",
+        "rate_limit",
+        "overloaded",
         "429",
+        "529",
         "503",
         "502",
     )

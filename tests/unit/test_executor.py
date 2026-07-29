@@ -411,3 +411,85 @@ class TestSessionIdExtraction:
         session_id = executor._extract_session_id(output)
 
         assert session_id is None
+
+
+class TestFailureReason:
+    """The CLI reports why it failed in stdout, not stderr."""
+
+    @staticmethod
+    async def _run(stdout: str, stderr: str, returncode: int) -> object:
+        executor = ClaudeExecutor()
+        request = ExecutionRequest(prompt="Test", model="opus", timeout_seconds=10)
+        mock_result = ProcessResult(stdout=stdout, stderr=stderr, returncode=returncode)
+
+        with patch.object(executor, "build_command", return_value=["claude"]):
+            with patch("prism.core.executor.CancellableProcess") as MockProcess:
+                mock_process = AsyncMock()
+                mock_process.run.return_value = mock_result
+                mock_process.is_cancelled = False
+                MockProcess.return_value = mock_process
+                return await executor.execute(request)
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_surfaces_instead_of_exit_code(self) -> None:
+        """A quota rejection must not degrade to 'exited with code 1'."""
+        stdout = json.dumps({
+            "type": "result",
+            "is_error": True,
+            "error": "rate_limit",
+            "message": {"content": [{"type": "text", "text": "You've hit your limit"}]},
+        })
+
+        result = await self._run(stdout, "", 1)
+
+        assert result.success is False
+        assert "rate_limit" in (result.error_message or "")
+        assert "You've hit your limit" in (result.error_message or "")
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_is_retried(self) -> None:
+        """Surfacing the reason is what lets the retry tier recognise it."""
+        stdout = json.dumps({"is_error": True, "error": "rate_limit"})
+
+        result = await self._run(stdout, "", 1)
+
+        assert result.is_transient_error() is True
+
+    @pytest.mark.asyncio
+    async def test_error_payload_on_clean_exit_still_fails(self) -> None:
+        """A self-declared error counts even when the process exits 0."""
+        stdout = json.dumps({"is_error": True, "subtype": "error_during_execution"})
+
+        result = await self._run(stdout, "", 0)
+
+        assert result.success is False
+        assert "error_during_execution" in (result.error_message or "")
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_stderr_when_output_unparseable(self) -> None:
+        result = await self._run("not json", "boom from stderr", 1)
+
+        assert result.error_message == "boom from stderr"
+
+    @pytest.mark.asyncio
+    async def test_success_payload_is_not_treated_as_error(self) -> None:
+        """The result text of a healthy run must not be read as a reason."""
+        stdout = json.dumps({"result": "the answer", "session_id": "s-1"})
+
+        result = await self._run(stdout, "", 0)
+
+        assert result.success is True
+        assert result.error_message is None
+
+    @pytest.mark.asyncio
+    async def test_success_subtype_is_not_reported_as_a_reason(self) -> None:
+        """A failing payload can still carry subtype 'success'."""
+        stdout = json.dumps({
+            "is_error": True,
+            "subtype": "success",
+            "result": "Failed to authenticate. API Error: 401",
+        })
+
+        result = await self._run(stdout, "", 1)
+
+        assert result.error_message == "Failed to authenticate. API Error: 401"

@@ -32,7 +32,15 @@ class TestBuildCommand:
             "--allowed-tools", "google_web_search",
             "-o", "json",
             "--yolo",
+            "--skip-trust",
         ]
+
+    def test_command_skips_workspace_trust(self) -> None:
+        """Without this the CLI aborts headless runs in an untrusted folder."""
+        executor = GeminiExecutor()
+        request = ExecutionRequest(prompt="q", model="gemini-flash-latest")
+
+        assert "--skip-trust" in executor.build_command(request)
 
 
 class TestBuildEnv:

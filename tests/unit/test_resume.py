@@ -17,6 +17,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 import yaml
 
+from prism.config import get_config
 from prism.core.response import ExecutionRequest, ExecutionResult
 from prism.core.retry import RetryExecutor
 from prism.database.models import SearchSession, SessionStatus
@@ -174,7 +175,7 @@ class TestResumeSessionSuccess:
         assert isinstance(req, ExecutionRequest)
         assert "Follow up question" in req.prompt
         assert req.resume_session == "sess-to-resume"
-        assert req.timeout_seconds is None
+        assert req.timeout_seconds == get_config().levels[0].manager_timeout_seconds
 
     @pytest.mark.asyncio
     async def test_resume_has_no_json_schema(

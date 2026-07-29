@@ -14,13 +14,25 @@ server:
 search:
   max_query_length: 10000
 
+errors:
+  # Failure reasons are parsed out of the CLI's own output and stored on the
+  # session, so a stack trace or a full model response can end up here. Cap it.
+  max_message_chars: 500
+
 levels:
   0:
     worker_timeout_seconds: 80
     worker_visible_timeout: 30
+    # Used by resume-chat, which runs a manager turn without dispatching workers.
+    manager_timeout_seconds: 120
   1:
-    worker_timeout_seconds: 140
-    worker_visible_timeout: 50
+    # Hard kill budget per worker. Keep well above the visible budget: agents
+    # routinely overshoot the budget they are told, and a hard cap sitting on
+    # the success-time distribution clips otherwise-healthy runs.
+    worker_timeout_seconds: 200
+    worker_visible_timeout: 80
+    # Budget for the manager's own turns (planning, synthesis, resume).
+    manager_timeout_seconds: 120
     agent_allocation:
       claude_search: 1
       gemini_search: 1
@@ -29,6 +41,7 @@ levels:
   2:
     worker_timeout_seconds: 230
     worker_visible_timeout: 120
+    manager_timeout_seconds: 240
     agent_allocation:
       claude_search: 2
       gemini_search: 2
@@ -37,6 +50,7 @@ levels:
   3:
     worker_timeout_seconds: 600
     worker_visible_timeout: 480
+    manager_timeout_seconds: 300
     agent_allocation:
       claude_search: 3
       gemini_search: 2
@@ -44,7 +58,16 @@ levels:
       perplexity_search: 1
 
 models:
+  # Model the Claude CLI falls back to when the primary one is overloaded or
+  # rate limited. Aliases resolve to the newest model the installed CLI knows,
+  # so freshness is pinned by the CLI version in docker/Dockerfile, not here.
+  fallback: sonnet
   session_manager:
+    # Level 0 is the resume-chat manager: it discusses stored results and never
+    # dispatches workers, so it does not need the planning tier's model.
+    0:
+      model: sonnet
+      effort: low
     1:
       model: opus
       effort: low
@@ -65,14 +88,17 @@ models:
     3:
       model: opus
   gemini_workers:
+    # Rolling aliases: Google points these at the newest flash/pro release, so
+    # a deprecated generation never strands a worker. Pin a concrete id here
+    # only to reproduce a specific model's behaviour.
     0:
-      model: gemini-3.5-flash
+      model: gemini-flash-latest
     1:
-      model: gemini-3.5-flash
+      model: gemini-flash-latest
     2:
-      model: gemini-3.1-pro-preview
+      model: gemini-pro-latest
     3:
-      model: gemini-3.1-pro-preview
+      model: gemini-pro-latest
 
 level0:
   default_providers:

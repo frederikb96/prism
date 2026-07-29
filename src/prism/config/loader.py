@@ -166,11 +166,19 @@ class SearchConfig:
 
 
 @dataclass
+class ErrorsConfig:
+    """Limits applied to failure reasons surfaced to clients."""
+
+    max_message_chars: int
+
+
+@dataclass
 class LevelConfig:
     """Timeout and allocation configuration for a search level."""
 
     worker_timeout_seconds: int
     worker_visible_timeout: int
+    manager_timeout_seconds: int | None = None
     agent_allocation: dict[str, int] | None = None
 
 
@@ -186,6 +194,7 @@ class ModelConfig:
 class ModelsConfig:
     """Per-level model configuration for all agent types."""
 
+    fallback: str
     session_manager: dict[int, ModelConfig]
     claude_workers: dict[int, ModelConfig]
     gemini_workers: dict[int, ModelConfig]
@@ -256,6 +265,7 @@ class PrismConfig:
 
     server: ServerConfig
     search: SearchConfig
+    errors: ErrorsConfig
     levels: dict[int, LevelConfig]
     models: ModelsConfig
     level0: Level0Config
@@ -299,6 +309,7 @@ def get_config() -> PrismConfig:
 
         server_cfg = _require(cfg, "server", "server")
         search_cfg = _require(cfg, "search", "search")
+        errors_cfg = _require(cfg, "errors", "errors")
         levels_cfg = _require(cfg, "levels", "levels")
         models_cfg = _require(cfg, "models", "models")
         level0_cfg = _require(cfg, "level0", "level0")
@@ -319,6 +330,7 @@ def get_config() -> PrismConfig:
             levels[level_num] = LevelConfig(
                 worker_timeout_seconds=_require(level_data, "worker_timeout_seconds", wrk_path),
                 worker_visible_timeout=_require(level_data, "worker_visible_timeout", vis_path),
+                manager_timeout_seconds=level_data.get("manager_timeout_seconds"),
                 agent_allocation=agent_allocation,
             )
 
@@ -341,8 +353,14 @@ def get_config() -> PrismConfig:
                     search_cfg, "max_query_length", "search.max_query_length"
                 ),
             ),
+            errors=ErrorsConfig(
+                max_message_chars=_require(
+                    errors_cfg, "max_message_chars", "errors.max_message_chars"
+                ),
+            ),
             levels=levels,
             models=ModelsConfig(
+                fallback=_require(models_cfg, "fallback", "models.fallback"),
                 session_manager=_parse_model_configs(sm_cfg, "session_manager"),
                 claude_workers=_parse_model_configs(cw_cfg, "claude_workers"),
                 gemini_workers=_parse_model_configs(gw_cfg, "gemini_workers"),

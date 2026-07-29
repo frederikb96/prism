@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any
 
 from prism.config import RetryConfig, get_config
 from prism.core.hooks import build_gemini_settings_file
+from prism.core.parsing import cli_failure_message, cli_output_flags_error
 from prism.core.process import CancellableProcess
 from prism.core.response import ExecutionRequest, ExecutionResult
 
@@ -68,6 +69,9 @@ class GeminiExecutor:
             "--allowed-tools", "google_web_search",
             "-o", "json",
             "--yolo",
+            # Since 0.52 an untrusted workspace downgrades approval mode and
+            # aborts the run, which no headless invocation can recover from.
+            "--skip-trust",
         ]
         return cmd
 
@@ -193,9 +197,25 @@ class GeminiExecutor:
             if process.is_cancelled:
                 return ExecutionResult.from_cancelled()
 
-            if not result.success:
+            if not result.success or cli_output_flags_error(result.stdout):
+                message = cli_failure_message(
+                    "Gemini CLI",
+                    result.stdout,
+                    result.stderr,
+                    result.returncode,
+                    config.errors.max_message_chars,
+                )
+                logger.warning(
+                    "Gemini CLI failed",
+                    extra={
+                        "session_id": session_id,
+                        "model": request.model,
+                        "exit_code": result.returncode,
+                        "reason": message,
+                    },
+                )
                 return ExecutionResult.from_error(
-                    message=result.stderr or f"Gemini CLI exited with code {result.returncode}",
+                    message=message,
                     exit_code=result.returncode,
                     output=result.stdout,
                 )

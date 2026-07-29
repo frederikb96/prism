@@ -611,8 +611,9 @@ class TestRunner:
         """
         Find the completed L1 session DB UUID via list_sessions.
 
-        Matches by level, completed status, resumable flag, and query prefix.
-        Falls back to the stored session_id if list_sessions fails.
+        Matches the newest resumable, completed L1 session. Listings do not
+        expose the query, and the search response returns the Claude CLI
+        session rather than the DB row, so neither can identify the session.
         """
         try:
             async with Client(self.mcp_url) as client:
@@ -628,14 +629,12 @@ class TestRunner:
                     session.get("resumable")
                     and session.get("level") == 1
                     and session.get("status") == "completed"
-                    and L1_QUERY[:40] in session.get("query", "")
                 ):
                     return session.get("id")
         except Exception:
             pass
 
-        # Fallback: try stored session_id directly (might work if it's a DB UUID)
-        return self._l1_session_id
+        return None
 
 
 # ---------------------------------------------------------------------------

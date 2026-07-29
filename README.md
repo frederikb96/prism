@@ -9,9 +9,9 @@ Multi-level web search MCP server. Wraps Claude, Gemini, Perplexity, and Tavily 
 ## Search Levels
 
 - **Level 0**: Instant - direct worker call (default: claude_search), supports multi-provider selection
-- **Level 1**: Quick - 2-3 workers, parallel dispatch (~60s)
-- **Level 2**: Standard - 4-6 workers, comprehensive (~150s)
-- **Level 3**: Deep - 8-12 workers, exhaustive research (~600s)
+- **Level 1**: Quick - 4 workers, parallel dispatch (~3 min)
+- **Level 2**: Standard - 6 workers, comprehensive (~5 min)
+- **Level 3**: Deep - 8 workers, exhaustive research (~10-15 min)
 
 All 4 worker types (claude_search, tavily_search, perplexity_search, gemini_search) are available at every level. L0 supports explicit provider selection via the `providers` parameter. Levels 1-3 use a search manager that plans tasks, dispatches parallel workers, and synthesizes results.
 

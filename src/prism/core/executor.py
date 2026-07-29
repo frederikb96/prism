@@ -14,6 +14,7 @@ import uuid
 from typing import TYPE_CHECKING, Any
 
 from prism.config import get_config
+from prism.core.parsing import cli_failure_message, cli_output_flags_error
 from prism.core.process import CancellableProcess
 from prism.core.response import ExecutionRequest, ExecutionResult
 
@@ -62,6 +63,12 @@ class ClaudeExecutor:
             "--model", request.model,
             "--output-format", "json",
         ]
+
+        # Global policy rather than a per-request choice: any worker is better
+        # served by a second model than by failing when the first is saturated.
+        fallback = get_config().models.fallback
+        if fallback and fallback != request.model:
+            cmd.extend(["--fallback-model", fallback])
 
         if request.tools:
             cmd.extend(["--tools", request.tools])
@@ -158,9 +165,25 @@ class ClaudeExecutor:
             if process.is_cancelled:
                 return ExecutionResult.from_cancelled()
 
-            if not result.success:
+            if not result.success or cli_output_flags_error(result.stdout):
+                message = cli_failure_message(
+                    "Claude CLI",
+                    result.stdout,
+                    result.stderr,
+                    result.returncode,
+                    config.errors.max_message_chars,
+                )
+                logger.warning(
+                    "Claude CLI failed",
+                    extra={
+                        "session_id": session_id,
+                        "model": request.model,
+                        "exit_code": result.returncode,
+                        "reason": message,
+                    },
+                )
                 return ExecutionResult.from_error(
-                    message=result.stderr or f"Claude CLI exited with code {result.returncode}",
+                    message=message,
                     exit_code=result.returncode,
                     output=result.stdout,
                 )

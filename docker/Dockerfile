@@ -4,7 +4,7 @@
 # =============================================================================
 # Base stage: Common dependencies
 # =============================================================================
-FROM python:3.13-slim AS base
+FROM python:3.14-slim AS base
 
 # Install system dependencies, Node.js, and gosu in a single layer
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -16,7 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Gemini CLI for workers
-RUN npm install -g @google/gemini-cli@0.28.1
+RUN npm install -g @google/gemini-cli@0.52.0
 
 # Create non-root user for podman rootless compatibility
 RUN useradd -m -u 1000 appuser
@@ -24,7 +24,7 @@ RUN useradd -m -u 1000 appuser
 # Install Claude CLI (binary goes to ~/.local/share/claude/, symlink at ~/.local/bin/claude)
 USER appuser
 # renovate: datasource=npm depName=@anthropic-ai/claude-code
-RUN curl -fsSL https://claude.ai/install.sh | bash -s 2.1.37
+RUN curl -fsSL https://claude.ai/install.sh | bash -s 2.1.220
 USER root
 
 ENV PATH="/home/appuser/.local/bin:${PATH}"

@@ -431,7 +431,9 @@ class SearchFlow:
         logger.debug("Manager creating task plan", extra={"search_level": level})
 
         plan_start = time.monotonic()
-        plan_result = await manager.plan(query, timeout_seconds=None)
+        plan_result = await manager.plan(
+            query, timeout_seconds=level_config.manager_timeout_seconds
+        )
         plan_wall_time = round(time.monotonic() - plan_start, 2)
 
         log_manager_phase(
@@ -538,7 +540,7 @@ class SearchFlow:
         synth_start = time.monotonic()
         synthesis_result = await manager.synthesize(
             results=worker_results,
-            timeout_seconds=None,
+            timeout_seconds=level_config.manager_timeout_seconds,
         )
         synth_wall_time = round(time.monotonic() - synth_start, 2)
 
@@ -610,15 +612,20 @@ class SearchFlow:
             extra={"claude_session_id": claude_session_id, "session_id": session_id},
         )
 
+        config = get_config()
+        level_config = config.levels[0]
+
         manager = ManagerAgent(
             executor=self._retry_executor,
-            model="sonnet",
+            model=config.models.session_manager[0].model,
             agent_allocation={},
             level=0,
             session_id=claude_session_id,
         )
 
-        chat_result = await manager.follow_up_chat(follow_up, timeout_seconds=None)
+        chat_result = await manager.follow_up_chat(
+            follow_up, timeout_seconds=level_config.manager_timeout_seconds
+        )
 
         if not chat_result.success:
             return SearchResult(
@@ -695,7 +702,9 @@ class SearchFlow:
         )
 
         plan_start = time.monotonic()
-        plan_result = await manager.follow_up_search(follow_up, timeout_seconds=None)
+        plan_result = await manager.follow_up_search(
+            follow_up, timeout_seconds=level_config.manager_timeout_seconds
+        )
         plan_wall_time = round(time.monotonic() - plan_start, 2)
 
         log_manager_phase(

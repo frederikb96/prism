@@ -74,10 +74,12 @@ class TestConfigLoading:
             "perplexity_search": 1,
         }
 
-    def test_no_manager_timeout_in_levels(self) -> None:
+    def test_every_level_bounds_its_manager(self) -> None:
         config = get_config()
-        for level_config in config.levels.values():
-            assert not hasattr(level_config, "manager_timeout_seconds")
+        for level, level_config in config.levels.items():
+            assert level_config.manager_timeout_seconds, (
+                f"level {level} would let planning and synthesis run unbounded"
+            )
 
     def test_loads_retry_config(self) -> None:
         config = get_config()
@@ -117,7 +119,8 @@ class TestModelsConfig:
     def test_loads_session_manager_models(self) -> None:
         config = get_config()
         sm = config.models.session_manager
-        assert set(sm.keys()) == {1, 2, 3}
+        assert set(sm.keys()) == {0, 1, 2, 3}
+        assert sm[0] == ModelConfig(model="sonnet", effort="low")
         assert sm[1] == ModelConfig(model="opus", effort="low")
         assert sm[2] == ModelConfig(model="opus", effort="low")
         assert sm[3] == ModelConfig(model="opus", effort=None)
@@ -135,10 +138,10 @@ class TestModelsConfig:
         config = get_config()
         gw = config.models.gemini_workers
         assert set(gw.keys()) == {0, 1, 2, 3}
-        assert gw[0] == ModelConfig(model="gemini-3.5-flash", effort=None)
-        assert gw[1] == ModelConfig(model="gemini-3.5-flash", effort=None)
-        assert gw[2] == ModelConfig(model="gemini-3.1-pro-preview", effort=None)
-        assert gw[3] == ModelConfig(model="gemini-3.1-pro-preview", effort=None)
+        assert gw[0] == ModelConfig(model="gemini-flash-latest", effort=None)
+        assert gw[1] == ModelConfig(model="gemini-flash-latest", effort=None)
+        assert gw[2] == ModelConfig(model="gemini-pro-latest", effort=None)
+        assert gw[3] == ModelConfig(model="gemini-pro-latest", effort=None)
 
 
 class TestLevel0Config:
@@ -237,6 +240,8 @@ class TestConfigErrors:
               log_level: INFO
             search:
               max_query_length: 10000
+            errors:
+              max_message_chars: 500
             levels:
               0:
                 worker_timeout_seconds: 70
