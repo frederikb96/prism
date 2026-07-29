@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-29
+
+### Changed
+
+- **Breaking:** an L1-L3 search now returns the session id that `get_session` and `resume` accept. It previously returned the underlying Claude CLI session, which no tool accepts, so resuming a search required looking the real id up via `list_sessions` first
+
+### Fixed
+
+- Sessions whose synthesis fell back to combining worker output were stored with the DB row id in place of the Claude CLI session, leaving them listed as resumable but impossible to resume
+
 ## [0.3.0] - 2026-07-29
 
 ### Added
