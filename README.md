@@ -92,6 +92,9 @@ The `X-User-Id` header identifies the user for session scoping. Each user sees o
 - `list_sessions(limit=20, offset=0, search=None)` - List recent sessions
 - `resume(session_id, follow_up)` - Resume L1-L3 session with follow-up
 
+The `session_id` a search returns is the id every other tool accepts — pass it
+straight to `get_session` or `resume`.
+
 ## Development
 
 ### UV for Python

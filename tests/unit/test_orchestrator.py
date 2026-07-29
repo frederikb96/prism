@@ -723,6 +723,91 @@ class TestSearchFlowLevel1_3:
         assert "worker 1 data" in result.content
         assert "worker 2 data" in result.content
 
+    @pytest.mark.asyncio
+    async def test_returns_db_session_not_claude_session(
+        self, mock_executor: MockExecutor
+    ) -> None:
+        """session_id is the only identifier get_session/resume accept."""
+        retry_executor = RetryExecutor(mock_executor, _retry_config())
+        dispatcher = MagicMock()
+        dispatcher.dispatch = AsyncMock(
+            return_value=[AgentResult.from_success(content="data")]
+        )
+        repository = _make_session_repository()
+
+        flow = SearchFlow(
+            retry_executor=retry_executor,
+            gemini_executor=MagicMock(),
+            dispatcher=dispatcher,
+            session_registry=_make_session_registry(),
+            session_repository=repository,
+        )
+
+        mock_executor.add_result(self._keyed_plan_output("mgr-sess"))
+        mock_executor.add_result(self._synthesis_output("synth-sess"))
+
+        result = await flow.execute_search("test query", level=1, user_id="test-user")
+
+        created_uuid = repository.create.await_args.kwargs["session_id"]
+        assert result.session_id == str(created_uuid)
+        assert result.session_id not in ("mgr-sess", "synth-sess")
+        assert "claude_session_id" not in result.to_dict()
+
+    @pytest.mark.asyncio
+    async def test_persists_claude_session_for_resume(
+        self, mock_executor: MockExecutor
+    ) -> None:
+        """--resume needs the manager's CLI session, not our row id."""
+        retry_executor = RetryExecutor(mock_executor, _retry_config())
+        dispatcher = MagicMock()
+        dispatcher.dispatch = AsyncMock(
+            return_value=[AgentResult.from_success(content="data")]
+        )
+        repository = _make_session_repository()
+
+        flow = SearchFlow(
+            retry_executor=retry_executor,
+            gemini_executor=MagicMock(),
+            dispatcher=dispatcher,
+            session_registry=_make_session_registry(),
+            session_repository=repository,
+        )
+
+        mock_executor.add_result(self._keyed_plan_output("mgr-sess"))
+        mock_executor.add_result(self._synthesis_output("synth-sess"))
+
+        await flow.execute_search("test query", level=1, user_id="test-user")
+
+        assert repository.update.await_args.kwargs["claude_session_id"] == "synth-sess"
+
+    @pytest.mark.asyncio
+    async def test_persists_claude_session_when_synthesis_falls_back(
+        self, mock_executor: MockExecutor
+    ) -> None:
+        """A fallback result must stay resumable."""
+        retry_executor = RetryExecutor(mock_executor, _retry_config())
+        dispatcher = MagicMock()
+        dispatcher.dispatch = AsyncMock(
+            return_value=[AgentResult.from_success(content="data")]
+        )
+        repository = _make_session_repository()
+
+        flow = SearchFlow(
+            retry_executor=retry_executor,
+            gemini_executor=MagicMock(),
+            dispatcher=dispatcher,
+            session_registry=_make_session_registry(),
+            session_repository=repository,
+        )
+
+        mock_executor.add_result(self._keyed_plan_output("mgr-sess"))
+        mock_executor.add_result(ExecutionResult.from_error("synthesis failed"))
+
+        result = await flow.execute_search("test", level=1, user_id="test-user")
+
+        assert result.metadata.get("fallback") is True
+        assert repository.update.await_args.kwargs["claude_session_id"] == "mgr-sess"
+
 
 # ---------------------------------------------------------------------------
 # SearchFlow — provider resolution

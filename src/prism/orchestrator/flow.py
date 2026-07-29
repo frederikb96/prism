@@ -68,6 +68,9 @@ class SearchResult:
     error: str | None = None
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     metadata: dict[str, Any] = field(default_factory=dict)
+    # Internal plumbing for persistence and --resume. Never returned to
+    # clients: session_id is the only identifier the MCP tools accept.
+    claude_session_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for MCP response."""
@@ -196,7 +199,7 @@ class SearchFlow:
                 error_message=result.error,
                 completed_at=completed_at,
                 duration_ms=duration_ms,
-                claude_session_id=result.session_id if level > 0 else None,
+                claude_session_id=result.claude_session_id,
             )
 
             return result
@@ -570,6 +573,7 @@ class SearchFlow:
                 level=level,
                 query=query,
                 metadata=result_metadata,
+                claude_session_id=manager.session_id,
             )
 
         content = (
@@ -581,10 +585,11 @@ class SearchFlow:
         return SearchResult(
             success=True,
             content=content,
-            session_id=synthesis_result.session_id or session_id,
+            session_id=session_id,
             level=level,
             query=query,
             metadata=result_metadata,
+            claude_session_id=synthesis_result.session_id or manager.session_id,
         )
 
     async def resume_session(

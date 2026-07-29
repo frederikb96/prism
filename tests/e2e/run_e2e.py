@@ -403,15 +403,7 @@ class TestRunner:
                 error="No L1 session_id available (l1 test must run and pass first)",
             )
 
-        # Find the DB session UUID for the L1 search
-        session_uuid = await self._find_l1_session_uuid()
-        if not session_uuid:
-            return TestResult(
-                name=name,
-                passed=False,
-                duration=time.time() - start,
-                error="Could not find completed L1 session in DB via list_sessions",
-            )
+        session_uuid = self._l1_session_id
 
         try:
             async with Client(self.mcp_url) as client:
@@ -606,35 +598,6 @@ class TestRunner:
                 duration=time.time() - start,
                 error=str(e),
             )
-
-    async def _find_l1_session_uuid(self) -> str | None:
-        """
-        Find the completed L1 session DB UUID via list_sessions.
-
-        Matches the newest resumable, completed L1 session. Listings do not
-        expose the query, and the search response returns the Claude CLI
-        session rather than the DB row, so neither can identify the session.
-        """
-        try:
-            async with Client(self.mcp_url) as client:
-                raw = await asyncio.wait_for(
-                    client.call_tool("list_sessions", {"limit": 10}),
-                    timeout=10,
-                )
-            text = raw.content[0].text if raw.content else ""
-            parsed = self._parse_response(text)
-
-            for session in parsed.get("sessions", []):
-                if (
-                    session.get("resumable")
-                    and session.get("level") == 1
-                    and session.get("status") == "completed"
-                ):
-                    return session.get("id")
-        except Exception:
-            pass
-
-        return None
 
 
 # ---------------------------------------------------------------------------
