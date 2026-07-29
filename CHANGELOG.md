@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-29
+
+### Added
+
+- Failure reasons are now parsed out of CLI stdout: both CLIs report *why* a run failed in their JSON payload while leaving stderr empty, so every API error previously collapsed to "Claude CLI exited with code 1". Rate limits, auth failures and overload now reach the session metadata and the logs
+- A payload that flags `is_error` is treated as a failure even when the process exits 0
+- `--fallback-model` (config `models.fallback`) so a saturated primary model degrades to a second model instead of failing the worker
+- `manager_timeout_seconds` per level: planning, synthesis and resume ran unbounded, which let single L2 sessions reach 815s and blow past client timeouts
+- `errors.max_message_chars` to cap surfaced failure reasons
+
+### Changed
+
+- Claude CLI 2.1.37 → 2.1.220. The `opus`/`haiku` aliases resolve against the installed CLI, so the old pin silently capped every "opus" worker at Opus 4.6; it now resolves to Opus 5
+- Gemini CLI 0.28.1 → 0.52.0
+- Gemini worker models pinned to rolling aliases `gemini-flash-latest` / `gemini-pro-latest` so a deprecated generation no longer strands a worker
+- L1 worker timeout 140s → 200s, visible budget 50s → 80s. The old cap sat on top of the success-time distribution (p95 128s, max 140s), clipping healthy runs
+- `fastmcp` 2.x → 3.4.5. The `<3.0.0` cap from 0.2.2 was verified against 3.4.5: tool calls, streamable HTTP and resume all work
+- Base image python 3.13-slim → 3.14-slim
+- Resume-chat manager model moved from a hardcoded `"sonnet"` to `models.session_manager.0`
+- GitHub Actions bumped: checkout v7, setup-uv v8, buildx v4, login v4, build-push v7, gh-release v3
+
+### Fixed
+
+- Gemini workers aborted immediately under CLI ≥ 0.52, which refuses to run headless in an untrusted workspace; `--skip-trust` is now passed
+- Gemini failures reported the Node `punycode` deprecation warning as the error because stderr was preferred over the payload
+- Rate-limit errors were never retried: the reason never reached `error_message`, so it could not match the transient patterns
+
 ## [0.2.2] - 2026-05-29
 
 ### Fixed
