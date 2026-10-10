@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Type checking no longer loads the SQLAlchemy mypy plugin, which SQLAlchemy 2.1 removed; the ORM models type-check with the native `Mapped` annotations
+- Pull request checks run once on `pull_request` and report through a single `CI ok` job; they no longer re-run on pushes to `main`
+
 ## [0.4.0] - 2026-07-29
 
 ### Changed
