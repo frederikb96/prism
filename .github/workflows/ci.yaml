@@ -1,8 +1,6 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
 
@@ -33,3 +31,16 @@ jobs:
       - name: Unit tests
         if: matrix.python-version == '3.13'
         run: uv run pytest tests/unit/ -q --tb=short
+
+  ci-ok:
+    name: CI ok
+    needs: [quality]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if the quality job did not succeed
+        run: |
+          if [ "${{ needs.quality.result }}" != "success" ]; then
+            echo "quality: ${{ needs.quality.result }}"
+            exit 1
+          fi
