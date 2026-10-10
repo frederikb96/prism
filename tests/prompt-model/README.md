@@ -2,8 +2,6 @@
 
 Containerized test environment for evaluating web search prompts across CLI providers and models. Part of Prism's provider research phase.
 
-Full research context: `.claude/provider-research.md`
-
 ## Quick Start
 
 ```bash

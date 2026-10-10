@@ -118,6 +118,16 @@ uv run python tests/e2e/run_e2e.py                     # all tests
 uv run python tests/e2e/run_e2e.py --only l0_default,l1 # specific tests
 ```
 
+### Checks
+
+Pull requests run these in CI (`CI ok` is the required check):
+
+```bash
+uv run ruff check src/ tests/
+uv run mypy src/prism/
+uv run pytest tests/unit/ -q
+```
+
 ### Database Migrations
 
 ```bash
