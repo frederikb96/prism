@@ -24,15 +24,18 @@ levels:
     worker_timeout_seconds: 80
     worker_visible_timeout: 30
     # Used by resume-chat, which runs a manager turn without dispatching workers.
-    manager_timeout_seconds: 120
+    manager_timeout_seconds: 180
   1:
     # Hard kill budget per worker. Keep well above the visible budget: agents
     # routinely overshoot the budget they are told, and a hard cap sitting on
     # the success-time distribution clips otherwise-healthy runs.
     worker_timeout_seconds: 200
     worker_visible_timeout: 80
-    # Budget for the manager's own turns (planning, synthesis, resume).
-    manager_timeout_seconds: 120
+    # Budget for the manager's own turns (planning, synthesis, resume). This is
+    # a hung-call detector, not a quality budget: the manager is never told it
+    # and cannot trim its work, and synthesis is the one step that turns an
+    # expensive dispatch into an answer. Keep it far above observed durations.
+    manager_timeout_seconds: 300
     agent_allocation:
       claude_search: 1
       gemini_search: 1
@@ -41,7 +44,7 @@ levels:
   2:
     worker_timeout_seconds: 230
     worker_visible_timeout: 120
-    manager_timeout_seconds: 240
+    manager_timeout_seconds: 600
     agent_allocation:
       claude_search: 2
       gemini_search: 2
@@ -50,7 +53,7 @@ levels:
   3:
     worker_timeout_seconds: 600
     worker_visible_timeout: 480
-    manager_timeout_seconds: 300
+    manager_timeout_seconds: 900
     agent_allocation:
       claude_search: 3
       gemini_search: 2

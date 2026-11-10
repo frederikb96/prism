@@ -328,3 +328,18 @@ class TestRetryConfigDelay:
             max_validation_retries=5,
         )
         assert rc.get_delay(10) == 8.0
+
+    def test_manager_budget_exceeds_observed_synthesis(self) -> None:
+        """
+        The manager is never told its budget and cannot trim its work.
+
+        Synthesis is the step that turns an expensive dispatch into an answer,
+        and real L2 runs have taken ~370s, so a budget near that clips genuine
+        work rather than catching a hung call.
+        """
+        levels = get_config().levels
+        floors = {0: 150, 1: 240, 2: 500, 3: 800}
+        for level, floor in floors.items():
+            assert levels[level].manager_timeout_seconds >= floor, (
+                f"level {level} manager budget is tight enough to clip real synthesis"
+            )
