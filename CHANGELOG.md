@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - Type checking no longer loads the SQLAlchemy mypy plugin, which SQLAlchemy 2.1 removed; the ORM models type-check with the native `Mapped` annotations
 - Pull request checks run once on `pull_request` and report through a single `CI ok` job; they no longer re-run on pushes to `main`
+- Manager timeouts raised to 180/300/600/900 s for levels 0-3; the budget only catches a hung call, and real L2 synthesis has taken around 370 s
 
 ## [0.4.0] - 2026-07-29
 
